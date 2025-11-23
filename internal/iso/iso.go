@@ -3,6 +3,7 @@ package iso
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -115,21 +116,42 @@ func (b *Builder) buildISOFilesystem(cfg config.VariantConfig, isoRoot string) e
 
 // installISOPackages installs packages into the ISO root.
 func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) error {
-	// On FreeBSD:
-	// pkg -r isoRoot install -y <packages>
+	// Install FreeBSD packages into the ISO root filesystem
+	// Uses pkg with -r flag to install to alternate root
 
-	// For prototype, create a marker file showing what packages would be installed
-	pkgList := filepath.Join(isoRoot, "installed-packages.txt")
-	content := fmt.Sprintf("# Bootenv ISO: %s\n# Package sets installed:\n", cfg.ID)
-	for _, pkgSet := range cfg.PkgLists {
-		content += fmt.Sprintf("# - %s\n", pkgSet)
+	if len(cfg.PkgLists) == 0 {
+		b.logger.Warn("No package lists specified for ISO variant")
+		return nil
 	}
+
+	// TODO: Expand package lists from cfg.PkgLists to actual package names
+	// For now, we'll need to implement package list resolution
+	// This would involve reading package list files and expanding them
+
+	// Example for when package resolution is implemented:
+	// args := []string{"-r", isoRoot, "install", "-y"}
+	// for _, pkg := range resolvedPackages {
+	//     args = append(args, pkg)
+	// }
+	// if err := b.runCommand("pkg", args...); err != nil {
+	//     return fmt.Errorf("package installation failed: %w", err)
+	// }
+
+	b.logger.Info("Package installation: %d package lists configured", len(cfg.PkgLists))
+	b.logger.Debug("Package lists: %v", cfg.PkgLists)
+
+	// Create a marker file documenting what should be installed
+	pkgList := filepath.Join(isoRoot, "PACKAGES.txt")
+	content := fmt.Sprintf("Bootenv ISO: %s\nPackage sets configured:\n", cfg.ID)
+	for _, pkgSet := range cfg.PkgLists {
+		content += fmt.Sprintf("  - %s\n", pkgSet)
+	}
+	content += "\nNote: Package installation requires FreeBSD pkg and package list resolution.\n"
 
 	if err := util.WriteStringToFile(pkgList, content, 0644); err != nil {
 		return err
 	}
 
-	b.logger.Debug("Installed package lists: %v", cfg.PkgLists)
 	return nil
 }
 
@@ -226,26 +248,65 @@ func (b *Builder) registerArcanTarget(isoRoot string) error {
 
 // assembleISO creates the final ISO image.
 func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath string) error {
-	// On FreeBSD, we would use:
-	// makefs -t cd9660 -o rockridge -o label=PGSD_BOOT outputPath isoRoot
+	// Create bootable ISO using makefs and mkisofs
+	// This requires FreeBSD with makefs utility
 
-	// For prototype, create a marker ISO file
-	content := fmt.Sprintf("# PGSD Bootenv ISO (prototype)\n"+
-		"# Variant: %s (%s)\n"+
-		"# Created: %s\n"+
-		"# Package lists: %v\n"+
-		"# Overlays: %v\n"+
-		"# Images dir: %s\n",
-		cfg.ID, cfg.Name,
-		time.Now().Format(time.RFC3339),
-		cfg.PkgLists,
-		cfg.Overlays,
-		cfg.ImagesDir)
+	// Determine ISO label (max 32 characters for cd9660)
+	label := cfg.ID
+	if len(label) > 32 {
+		label = label[:32]
+	}
 
-	if err := util.WriteStringToFile(outputPath, content, 0644); err != nil {
-		return err
+	// Create ISO filesystem using makefs
+	b.logger.Debug("Creating ISO filesystem with makefs...")
+
+	// makefs options for hybrid bootable ISO:
+	// -t cd9660: ISO 9660 filesystem
+	// -o rockridge: Rock Ridge extensions (long filenames, permissions)
+	// -o label=<label>: Volume label
+	// -o bootimage=i386:boot/cdboot: BIOS boot image
+	// -o no-emul-boot: No emulation boot
+	args := []string{
+		"-t", "cd9660",
+		"-o", "rockridge",
+		"-o", fmt.Sprintf("label=%s", label),
+		"-o", "bootimage=i386:boot/cdboot",
+		"-o", "no-emul-boot",
+		"-o", "no-trailing-padding",
+		outputPath,
+		isoRoot,
+	}
+
+	if err := b.runCommand("makefs", args...); err != nil {
+		return fmt.Errorf("makefs failed: %w", err)
 	}
 
 	b.logger.Debug("Created ISO image: %s", outputPath)
+
+	// Verify the ISO was created
+	if info, err := os.Stat(outputPath); err != nil {
+		return fmt.Errorf("ISO verification failed: %w", err)
+	} else {
+		b.logger.Info("ISO size: %.2f MB", float64(info.Size())/(1024*1024))
+	}
+
+	return nil
+}
+
+// runCommand executes a command and returns an error if it fails
+func (b *Builder) runCommand(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+
+	b.logger.Debug("Running: %s %v", name, args)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("command failed: %w\nOutput: %s", err, string(output))
+	}
+
+	if len(output) > 0 {
+		b.logger.Debug("Command output: %s", string(output))
+	}
+
 	return nil
 }
