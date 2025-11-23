@@ -1,35 +1,92 @@
 #!/bin/sh
 #
+# PGSD Boot Environment Initialization Script
+# This script runs at boot to set up the live environment
+#
 # PROVIDE: pgsd_bootenv_init
-# REQUIRE: LOGIN
-# KEYWORD: nojail
+# REQUIRE: NETWORKING DAEMON
+# BEFORE: LOGIN
+# KEYWORD: shutdown
 
 . /etc/rc.subr
 
 name="pgsd_bootenv_init"
-rcvar="${name}_enable"
-
+rcvar="pgsd_bootenv_init_enable"
 start_cmd="${name}_start"
+stop_cmd=":"
 
 pgsd_bootenv_init_start()
 {
-    if [ ! -x /usr/local/bin/arcan_db ]; then
-        echo "pgsd_bootenv_init: arcan_db not found, skipping installer target setup"
-        return 0
+    echo "PGSD Boot Environment: Initializing..."
+
+    # Create live user if it doesn't exist
+    if ! pw usershow pgsd >/dev/null 2>&1; then
+        echo "Creating live user 'pgsd'..."
+        pw useradd pgsd -u 1000 -g wheel -G operator,video,audio \
+            -s /usr/local/bin/zsh -m -h - <<EOF
+pgsd
+EOF
     fi
 
-    if [ ! -x /usr/local/bin/pgsd-inst ]; then
-        echo "pgsd_bootenv_init: pgsd-inst not found, skipping installer target setup"
-        return 0
+    # Set up home directory
+    if [ -d /home/pgsd ]; then
+        # Copy skeleton files if not already present
+        if [ ! -f /home/pgsd/.profile ]; then
+            cp -n /etc/skel/.* /home/pgsd/ 2>/dev/null || true
+        fi
+
+        # Ensure proper ownership
+        chown -R pgsd:wheel /home/pgsd
+        chmod 755 /home/pgsd
     fi
 
-    echo "pgsd_bootenv_init: registering PGSD installer as Arcan target"
+    # Set up Arcan state directory
+    if [ ! -d /home/pgsd/.local/share/arcan ]; then
+        mkdir -p /home/pgsd/.local/share/arcan
+        chown -R pgsd:wheel /home/pgsd/.local
+    fi
 
-    /usr/local/bin/arcan_db add_target pgsd-installer BINARY /usr/local/bin/pgsd-inst >/dev/null 2>&1
-    /usr/local/bin/arcan_db add_config pgsd-installer default >/dev/null 2>&1
+    # Enable auto-login on tty1 for live user
+    if ! grep -q "pgsd" /etc/gettytab 2>/dev/null; then
+        echo "Configuring auto-login..."
+        cat >> /etc/gettytab <<'GETTYTAB'
+# PGSD Live Environment Auto-login
+pgsd|PGSD Live Auto-login:\
+        :al=pgsd:tc=Pc:
+GETTYTAB
+    fi
+
+    # Update ttys for auto-login on console
+    if ! grep -q "Pc.*pgsd" /etc/ttys 2>/dev/null; then
+        sed -i '' 's/ttyv0.*Pc$/ttyv0  "\/usr\/libexec\/getty pgsd"  xterm  on  secure/' /etc/ttys
+    fi
+
+    # Display welcome message
+    cat <<'WELCOME'
+
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║           PGSD Boot Environment - Live System                ║
+║                                                              ║
+║  Arcan/Durden will start automatically on the console       ║
+║                                                              ║
+║  Default credentials:                                        ║
+║    Username: pgsd                                            ║
+║    Password: pgsd                                            ║
+║                                                              ║
+║  To install PGSD:                                            ║
+║    1. Wait for Arcan/Durden to start                         ║
+║    2. Open terminal (Meta+Enter)                             ║
+║    3. Run: pgsd-inst                                         ║
+║                                                              ║
+║  Or select "PGSD Installer" from the application menu        ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+
+WELCOME
+
+    echo "PGSD Boot Environment: Initialization complete"
 }
 
-load_rc_config "${name}"
-: ${pgsd_bootenv_init_enable:="YES"}
-
+load_rc_config $name
 run_rc_command "$1"

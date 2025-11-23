@@ -1,0 +1,29 @@
+# PGSD Installer Icon (Placeholder)
+# In a real system, this would be a PNG image
+# For the prototype, we include metadata for the icon
+
+# Icon specifications:
+# - Format: PNG
+# - Size: 128x128 pixels
+# - Theme: PGSD branding with installation/system icon
+# - Colors: PGSD brand colors (blue, white)
+
+# This file serves as a placeholder and documentation
+# The actual icon would be created by a designer
+
+Icon Name: pgsd-installer.png
+Description: PGSD System Installer application icon
+Size: 128x128
+Format: PNG with transparency
+Style: Modern, flat design
+Colors: #4a90e2 (blue), #ffffff (white), #1a1a1a (dark)
+
+Symbolic representation:
+  - Computer/monitor icon
+  - Installation arrow or progress indicator
+  - PGSD branding elements
+
+Usage:
+  - Durden application menu
+  - Desktop shortcuts
+  - Installer window icon
