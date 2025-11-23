@@ -372,11 +372,12 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 	// Check if cdboot file exists before configuring boot
 	cdbootPath := filepath.Join(isoRoot, "boot/cdboot")
 	hasCdboot := false
-	if _, err := os.Stat(cdbootPath); err == nil {
+	if stat, err := os.Stat(cdbootPath); err == nil && !stat.IsDir() {
 		hasCdboot = true
-		b.logger.Debug("BIOS boot file found: boot/cdboot")
+		b.logger.Info("BIOS boot file found: boot/cdboot (size: %d bytes)", stat.Size())
 	} else {
-		b.logger.Warn("BIOS boot file not found - ISO will not be BIOS bootable")
+		b.logger.Warn("BIOS boot file not found at %s - ISO will NOT be bootable in BIOS mode", cdbootPath)
+		b.logger.Warn("To create bootable ISOs, this must run on FreeBSD with boot files installed")
 	}
 
 	// Build makefs command arguments
@@ -398,7 +399,9 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 			"-o", "B=i386;boot/cdboot",  // Boot image specification
 			"-o", "no-emul-boot",         // No emulation mode
 		)
-		b.logger.Debug("Configured for BIOS boot with boot/cdboot")
+		b.logger.Info("Configured for BIOS boot with boot/cdboot")
+	} else {
+		b.logger.Info("Creating non-bootable ISO (no boot files available)")
 	}
 
 	// Add final options and paths
