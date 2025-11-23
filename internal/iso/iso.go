@@ -239,6 +239,7 @@ func (b *Builder) installBootInfrastructure(isoRoot string) error {
 	// Required boot files for BIOS boot
 	biosBootFiles := []string{
 		"/boot/cdboot",      // CD/DVD boot loader
+		"/boot/isoboot",     // Hybrid ISO boot (for USB boot support)
 		"/boot/loader",      // Boot loader
 		"/boot/loader.rc",   // Loader configuration
 		"/boot/defaults/loader.conf", // Default loader settings
@@ -561,7 +562,75 @@ func (b *Builder) createISOWithMakefs(toolPath, outputPath, isoRoot, label strin
 	b.logger.Debug("Calling makefs from isoRoot: %s", isoRoot)
 	b.logger.Debug("Output will be written to: %s", finalOutputPath)
 
-	return b.runCommandInDir(toolPath, isoRoot, args...)
+	if err := b.runCommandInDir(toolPath, isoRoot, args...); err != nil {
+		return err
+	}
+
+	// For USB boot support, add MBR boot code to create a hybrid ISO
+	// This makes the ISO bootable from both CD/DVD and USB drives
+	if hasCdboot {
+		if err := b.addMBRBootCode(finalOutputPath, isoRoot); err != nil {
+			b.logger.Warn("Failed to add MBR boot code (USB boot may not work): %v", err)
+			b.logger.Info("ISO is still bootable from CD/DVD")
+		} else {
+			b.logger.Info("Created hybrid ISO (bootable from CD/DVD and USB)")
+		}
+	}
+
+	return nil
+}
+
+// addMBRBootCode adds MBR boot code to an ISO to make it USB-bootable (hybrid ISO)
+// This is how FreeBSD creates hybrid ISOs that boot from both CD/DVD and USB
+func (b *Builder) addMBRBootCode(isoPath, isoRoot string) error {
+	// FreeBSD uses /boot/isoboot for hybrid ISOs
+	// isoboot contains the MBR boot code that allows USB boot
+	isobootPaths := []string{
+		"/boot/isoboot",                      // Preferred for hybrid ISOs
+		filepath.Join(isoRoot, "boot/isoboot"), // From ISO root
+		"/boot/cdboot",                       // Fallback
+	}
+
+	var isobootPath string
+	for _, path := range isobootPaths {
+		if _, err := os.Stat(path); err == nil {
+			isobootPath = path
+			b.logger.Debug("Found isoboot at: %s", path)
+			break
+		}
+	}
+
+	if isobootPath == "" {
+		return fmt.Errorf("isoboot file not found (checked: %v)", isobootPaths)
+	}
+
+	// Read the isoboot file (contains MBR boot code)
+	isoboot, err := os.ReadFile(isobootPath)
+	if err != nil {
+		return fmt.Errorf("failed to read isoboot: %w", err)
+	}
+
+	// Open the ISO file for writing at the beginning
+	iso, err := os.OpenFile(isoPath, os.O_RDWR, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open ISO: %w", err)
+	}
+	defer iso.Close()
+
+	// Write the first 432 bytes of isoboot to the ISO (MBR boot code)
+	// This doesn't overwrite the ISO 9660 structures, only adds boot code
+	bootCodeSize := 432
+	if len(isoboot) < bootCodeSize {
+		bootCodeSize = len(isoboot)
+	}
+
+	n, err := iso.WriteAt(isoboot[:bootCodeSize], 0)
+	if err != nil {
+		return fmt.Errorf("failed to write boot code: %w", err)
+	}
+
+	b.logger.Debug("Wrote %d bytes of MBR boot code to ISO", n)
+	return nil
 }
 
 // createISOWithXorriso creates an ISO using xorriso (modern Linux ISO tool)
