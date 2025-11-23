@@ -36,6 +36,11 @@ type DiskInfo struct {
 	Model  string
 }
 
+// Installation messages
+type installLogMsg string
+type installCompleteMsg struct{}
+type installErrorMsg struct{ err error }
+
 type model struct {
 	state        int
 	images       []ImageInfo
@@ -61,6 +66,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case installLogMsg:
+		m.installLog = append(m.installLog, string(msg))
+		return m, nil
+	case installCompleteMsg:
+		m.state = stateComplete
+		return m, nil
+	case installErrorMsg:
+		m.err = msg.err
+		m.state = stateError
+		return m, nil
 	}
 	return m, nil
 }
@@ -141,7 +156,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "y", "Y":
 			m.state = stateInstalling
-			go m.performInstallation()
+			return m, m.performInstallation()
 		case "n", "N":
 			m.state = stateDiskSelect
 			m.cursor = m.selectedDisk
@@ -333,77 +348,230 @@ func loadImages() ([]ImageInfo, error) {
 
 // loadDisks detects available disks for installation
 func loadDisks() ([]DiskInfo, error) {
-	// On FreeBSD, we would use: diskinfo -l to list disks
-	// For prototype, we'll create dummy disks
-
-	// Try to run diskinfo if available
-	cmd := exec.Command("diskinfo", "-l")
-	if output, err := cmd.Output(); err == nil {
-		// Parse real diskinfo output
-		return parseDiskinfo(string(output)), nil
+	// Try geom disk list first (more reliable on FreeBSD)
+	if disks := loadDisksFromGeom(); len(disks) > 0 {
+		return disks, nil
 	}
 
-	// Fall back to dummy disks for prototype
+	// Try sysctl kern.disks as fallback
+	if disks := loadDisksFromSysctl(); len(disks) > 0 {
+		return disks, nil
+	}
+
+	// Fall back to dummy disks for development/testing
 	return []DiskInfo{
 		{Device: "ada0", Size: "500GB", Model: "Virtual Disk"},
 		{Device: "ada1", Size: "1TB", Model: "Virtual Disk"},
 	}, nil
 }
 
-// parseDiskinfo parses diskinfo output
-func parseDiskinfo(output string) []DiskInfo {
-	var disks []DiskInfo
-	lines := strings.Split(output, "\n")
+// loadDisksFromGeom uses geom disk list to discover disks
+func loadDisksFromGeom() []DiskInfo {
+	// Run: geom disk list
+	cmd := exec.Command("geom", "disk", "list")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
 
+	var disks []DiskInfo
+	var currentDisk DiskInfo
+	inDisk := false
+
+	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
+
+		// New disk section starts with "Geom name:"
+		if strings.HasPrefix(line, "Geom name:") {
+			if inDisk && currentDisk.Device != "" {
+				disks = append(disks, currentDisk)
+			}
+			currentDisk = DiskInfo{}
+			inDisk = true
+			fields := strings.Fields(line)
+			if len(fields) >= 3 {
+				currentDisk.Device = fields[2]
+			}
+		} else if inDisk {
+			// Parse Mediasize field
+			if strings.HasPrefix(line, "Mediasize:") {
+				fields := strings.Fields(line)
+				if len(fields) >= 3 {
+					// Format: "Mediasize: 21474836480 (20G)"
+					if len(fields) >= 4 && strings.HasPrefix(fields[3], "(") {
+						currentDisk.Size = strings.Trim(fields[3], "()")
+					} else {
+						currentDisk.Size = formatBytes(fields[1])
+					}
+				}
+			}
+			// Parse descr field (model)
+			if strings.HasPrefix(line, "descr:") {
+				currentDisk.Model = strings.TrimPrefix(line, "descr:")
+				currentDisk.Model = strings.TrimSpace(currentDisk.Model)
+			}
+		}
+	}
+
+	// Add last disk
+	if inDisk && currentDisk.Device != "" {
+		disks = append(disks, currentDisk)
+	}
+
+	// Filter out CD-ROM and other non-disk devices
+	var filtered []DiskInfo
+	for _, disk := range disks {
+		// Skip CD-ROM, memory disks, etc.
+		if !strings.HasPrefix(disk.Device, "cd") &&
+			!strings.HasPrefix(disk.Device, "md") &&
+			!strings.HasPrefix(disk.Device, "pass") {
+			filtered = append(filtered, disk)
+		}
+	}
+
+	return filtered
+}
+
+// loadDisksFromSysctl uses sysctl kern.disks to discover disks
+func loadDisksFromSysctl() []DiskInfo {
+	// Run: sysctl -n kern.disks
+	cmd := exec.Command("sysctl", "-n", "kern.disks")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	// Parse space-separated list of disk names
+	diskNames := strings.Fields(string(output))
+	if len(diskNames) == 0 {
+		return nil
+	}
+
+	var disks []DiskInfo
+	for _, name := range diskNames {
+		// Skip CD-ROM and memory disks
+		if strings.HasPrefix(name, "cd") ||
+			strings.HasPrefix(name, "md") ||
+			strings.HasPrefix(name, "pass") {
 			continue
 		}
 
-		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			disks = append(disks, DiskInfo{
-				Device: fields[0],
-				Size:   fields[1],
-				Model:  strings.Join(fields[2:], " "),
-			})
+		// Get disk size using diskinfo
+		size := "Unknown"
+		model := "Disk"
+
+		cmd := exec.Command("diskinfo", name)
+		if output, err := cmd.Output(); err == nil {
+			fields := strings.Fields(string(output))
+			if len(fields) >= 3 {
+				// diskinfo output: device sectors size model
+				size = formatBytes(fields[2])
+			}
+			if len(fields) >= 4 {
+				model = strings.Join(fields[3:], " ")
+			}
 		}
+
+		disks = append(disks, DiskInfo{
+			Device: name,
+			Size:   size,
+			Model:  model,
+		})
 	}
 
 	return disks
 }
 
-// performInstallation executes the installation pipeline
-func (m *model) performInstallation() {
+// formatBytes converts byte count to human-readable size
+func formatBytes(bytesStr string) string {
+	// Try to parse as integer
+	var bytes int64
+	if _, err := fmt.Sscanf(bytesStr, "%d", &bytes); err != nil {
+		return bytesStr
+	}
+
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+		TB = GB * 1024
+	)
+
+	switch {
+	case bytes >= TB:
+		return fmt.Sprintf("%.1fTB", float64(bytes)/float64(TB))
+	case bytes >= GB:
+		return fmt.Sprintf("%.1fGB", float64(bytes)/float64(GB))
+	case bytes >= MB:
+		return fmt.Sprintf("%.1fMB", float64(bytes)/float64(MB))
+	case bytes >= KB:
+		return fmt.Sprintf("%.1fKB", float64(bytes)/float64(KB))
+	default:
+		return fmt.Sprintf("%dB", bytes)
+	}
+}
+
+// performInstallation executes the installation pipeline and returns a command
+func (m model) performInstallation() tea.Cmd {
 	image := m.images[m.selectedImg]
 	disk := m.disks[m.selectedDisk]
 
-	m.addLog("Starting installation...")
-	m.addLog(fmt.Sprintf("Image: %s", image.ID))
-	m.addLog(fmt.Sprintf("Target disk: %s", disk.Device))
+	return func() tea.Msg {
+		// Perform the installation synchronously
+		// The installation log messages will be collected
+		var logs []string
+		var installErr error
 
-	// Perform the actual installation
-	cfg := install.Config{
-		ImagePath:  image.Path,
-		TargetDisk: disk.Device,
-		ZpoolName:  "pgsd", // Default pool name
-		LogFunc:    m.addLog,
+		cfg := install.Config{
+			ImagePath:  image.Path,
+			TargetDisk: disk.Device,
+			ZpoolName:  "pgsd", // Default pool name
+			LogFunc: func(msg string) {
+				logs = append(logs, msg)
+			},
+		}
+
+		// Add initial log messages
+		logs = append(logs, "Starting installation...")
+		logs = append(logs, fmt.Sprintf("Image: %s", image.ID))
+		logs = append(logs, fmt.Sprintf("Target disk: %s", disk.Device))
+
+		// Run installation
+		installErr = install.Install(cfg)
+
+		// Build a batch of log messages to send
+		var cmds []tea.Cmd
+		for _, log := range logs {
+			msg := log // Capture for closure
+			cmds = append(cmds, func() tea.Msg {
+				return installLogMsg(msg)
+			})
+		}
+
+		// Add final status message
+		if installErr != nil {
+			cmds = append(cmds, func() tea.Msg {
+				return installErrorMsg{err: installErr}
+			})
+		} else {
+			logs = append(logs, "Installation complete!")
+			cmds = append(cmds, func() tea.Msg {
+				return installLogMsg("Installation complete!")
+			})
+			cmds = append(cmds, func() tea.Msg {
+				return installCompleteMsg{}
+			})
+		}
+
+		// Execute first command and return it
+		// Note: This is a simplified version - in production we'd use a better streaming approach
+		if len(cmds) > 0 {
+			return tea.Batch(cmds...)()
+		}
+
+		return installCompleteMsg{}
 	}
-
-	if err := install.Install(cfg); err != nil {
-		m.addLog(fmt.Sprintf("Installation failed: %v", err))
-		m.err = err
-		m.state = stateError
-		return
-	}
-
-	m.state = stateComplete
-}
-
-// addLog adds a message to the installation log
-func (m *model) addLog(msg string) {
-	m.installLog = append(m.installLog, msg)
 }
 
 func main() {

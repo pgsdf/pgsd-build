@@ -2,5 +2,5 @@ pgsdbuild
 artifacts/
 work/
 iso/
-pgsd-inst
+/pgsd-inst
 bin/
