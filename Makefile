@@ -1,27 +1,24 @@
 # PGSD Build System Makefile
 
 # Build configuration
-GO := go
-GOFLAGS := -v
-BINDIR := bin
-ARTIFACTSDIR := artifacts
-ISODIR := iso
-WORKDIR := work
+GO = go
+GOFLAGS = -v
+BINDIR = bin
+ARTIFACTSDIR = artifacts
+ISODIR = iso
+WORKDIR = work
 
 # Version information
-VERSION := 0.1.0
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS := -X main.Version=$(VERSION) \
-           -X main.GitCommit=$(GIT_COMMIT) \
-           -X main.BuildDate=$(BUILD_DATE)
+VERSION = 0.1.0
+GIT_COMMIT != git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+BUILD_DATE != date -u +"%Y-%m-%dT%H:%M:%SZ"
+LDFLAGS = -X main.Version=$(VERSION) \
+          -X main.GitCommit=$(GIT_COMMIT) \
+          -X main.BuildDate=$(BUILD_DATE)
 
 # Binary names
-PGSDBUILD := $(BINDIR)/pgsdbuild
-PGSDINST := $(BINDIR)/pgsd-inst
-
-# Default target
-.DEFAULT_GOAL := all
+PGSDBUILD = $(BINDIR)/pgsdbuild
+PGSDINST = $(BINDIR)/pgsd-inst
 
 # Phony targets
 .PHONY: all build clean install test help \
