@@ -1,0 +1,35 @@
+#!/bin/sh
+#
+# PROVIDE: pgsd_bootenv_init
+# REQUIRE: LOGIN
+# KEYWORD: nojail
+
+. /etc/rc.subr
+
+name="pgsd_bootenv_init"
+rcvar="${name}_enable"
+
+start_cmd="${name}_start"
+
+pgsd_bootenv_init_start()
+{
+    if [ ! -x /usr/local/bin/arcan_db ]; then
+        echo "pgsd_bootenv_init: arcan_db not found, skipping installer target setup"
+        return 0
+    fi
+
+    if [ ! -x /usr/local/bin/pgsd-inst ]; then
+        echo "pgsd_bootenv_init: pgsd-inst not found, skipping installer target setup"
+        return 0
+    fi
+
+    echo "pgsd_bootenv_init: registering PGSD installer as Arcan target"
+
+    /usr/local/bin/arcan_db add_target pgsd-installer BINARY /usr/local/bin/pgsd-inst >/dev/null 2>&1
+    /usr/local/bin/arcan_db add_config pgsd-installer default >/dev/null 2>&1
+}
+
+load_rc_config "${name}"
+: ${pgsd_bootenv_init_enable:="YES"}
+
+run_rc_command "$1"
