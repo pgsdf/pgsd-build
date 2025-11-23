@@ -1,0 +1,27 @@
+# Desktop environment configuration for PGSD
+
+# Audio subsystem
+sndio_enable="YES"                      # Enable sndio audio daemon
+sndiod_flags="-a on"                    # Auto-start with audio-on
+
+# Alternative: PulseAudio (if preferred)
+# pulseaudio_enable="YES"
+# pulseaudio_flags="--daemonize"
+
+# Graphics drivers are loaded via loader.conf
+# DRM modules: i915kms, amdgpu, radeonkms
+
+# Enable HAL daemon (if needed by legacy apps)
+# hald_enable="YES"
+
+# Power management
+powerd_enable="YES"                     # CPU frequency scaling
+powerd_flags="-a hiadaptive -b adaptive"  # Adaptive scaling policy
+
+# Performance governor for laptops
+# performance_cx_lowest="Cmax"          # Deepest C-state
+# economy_cx_lowest="Cmax"
+
+# Webcam support (v4l)
+# cuse_load="YES"                       # Loaded in loader.conf
+webcamd_enable="NO"                     # Set to YES if using webcams

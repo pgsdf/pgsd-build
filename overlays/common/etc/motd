@@ -1,1 +1,32 @@
-Welcome to PGSD (prototype)
+
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║   ██████╗  ██████╗ ███████╗██████╗                          ║
+║   ██╔══██╗██╔════╝ ██╔════╝██╔══██╗                         ║
+║   ██████╔╝██║  ███╗███████╗██║  ██║                         ║
+║   ██╔═══╝ ██║   ██║╚════██║██║  ██║                         ║
+║   ██║     ╚██████╔╝███████║██████╔╝                         ║
+║   ╚═╝      ╚═════╝ ╚══════╝╚═════╝                          ║
+║                                                              ║
+║   Pacific Grove Software Distribution Foundation            ║
+║   FreeBSD-based system with Arcan/Durden                    ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+
+Welcome to PGSD!
+
+ZFS Boot Environments:
+  • Use 'beadm list' to view available boot environments
+  • Create snapshots before system updates
+  • Roll back with 'beadm activate <name>' if needed
+
+System Information:
+  • Arcan Display Server: /usr/local/bin/arcan
+  • Durden Window Manager: /usr/local/share/arcan/appl/durden
+  • Configuration: ~/.arcan/durden/
+
+Documentation:
+  • PGSD Wiki: https://pgsd.org/wiki (placeholder)
+  • Arcan: https://arcan-fe.com
+  • FreeBSD Handbook: https://docs.freebsd.org
+

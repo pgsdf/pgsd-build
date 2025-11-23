@@ -1,0 +1,12 @@
+# ZFS configuration for PGSD systems
+# This file is sourced by rc.conf
+
+# Enable ZFS
+zfs_enable="YES"
+
+# Mount ZFS filesystems at boot
+zfs_mount_enable="YES"
+
+# Auto-snapshot configuration (if beadm is used)
+# Snapshots are created before pkg operations
+zfs_autosnapshot_enable="NO"  # Set to YES to enable automatic snapshots
