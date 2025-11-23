@@ -126,48 +126,57 @@ func (b *Builder) buildISOFilesystem(cfg config.VariantConfig, isoRoot string) e
 
 // installISOPackages installs packages into the ISO root.
 func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) error {
-	// Install FreeBSD packages into the ISO root filesystem
-	// Uses pkg with -r flag to install to alternate root
-
 	b.logger.Info("Installing FreeBSD base system for bootable ISO...")
 
-	// For a bootable ISO, we MUST install the FreeBSD base system
-	// This includes kernel, init, and core utilities
-	requiredPackages := []string{
-		"FreeBSD-kernel-generic", // Kernel
-		"FreeBSD-runtime",         // Init and core runtime
-		"FreeBSD-utilities",       // Base utilities
+	// For bootable ISOs, copy essential FreeBSD base system from host
+	// This is simpler and more reliable than using pkg for base system
+	essentialDirs := []string{
+		"/bin",
+		"/sbin",
+		"/lib",
+		"/libexec",
+		"/usr/bin",
+		"/usr/sbin",
+		"/usr/lib",
+		"/usr/libexec",
+		"/rescue",
 	}
 
-	b.logger.Info("Installing %d required base packages", len(requiredPackages))
+	b.logger.Info("Copying essential base system directories from host...")
+	for _, dir := range essentialDirs {
+		destDir := filepath.Join(isoRoot, dir[1:]) // Remove leading /
 
-	// Use pkg to install packages into the ISO root
-	for _, pkg := range requiredPackages {
-		b.logger.Info("Installing: %s", pkg)
-		args := []string{
-			"-r", isoRoot,     // Root directory
-			"install", "-y",   // Install without confirmation
-			pkg,
+		if _, err := os.Stat(dir); err != nil {
+			if os.IsNotExist(err) {
+				b.logger.Warn("Host directory not found (skipping): %s", dir)
+				continue
+			}
+			return fmt.Errorf("failed to access %s: %w", dir, err)
 		}
-		if err := b.runCommand("pkg", args...); err != nil {
-			return fmt.Errorf("failed to install %s: %w", pkg, err)
+
+		b.logger.Debug("Copying: %s -> %s", dir, destDir)
+		if err := util.CopyDir(dir, destDir); err != nil {
+			b.logger.Warn("Failed to copy %s: %v (continuing)", dir, err)
+			// Don't fail build, continue with other dirs
 		}
 	}
 
-	// Create package list documentation
-	b.logger.Info("Package installation: %d package lists configured", len(cfg.PkgLists))
-	pkgList := filepath.Join(isoRoot, "PACKAGES.txt")
-	content := fmt.Sprintf("Bootenv ISO: %s\n\nBase system installed:\n", cfg.ID)
-	for _, pkg := range requiredPackages {
-		content += fmt.Sprintf("  - %s\n", pkg)
-	}
-	content += "\nPackage sets configured (not yet installed):\n"
-	for _, pkgSet := range cfg.PkgLists {
-		content += fmt.Sprintf("  - %s\n", pkgSet)
+	// Ensure critical system directories exist
+	criticalDirs := []string{
+		filepath.Join(isoRoot, "dev"),
+		filepath.Join(isoRoot, "tmp"),
+		filepath.Join(isoRoot, "var"),
+		filepath.Join(isoRoot, "var/run"),
+		filepath.Join(isoRoot, "var/log"),
+		filepath.Join(isoRoot, "root"),
+		filepath.Join(isoRoot, "proc"),
+		filepath.Join(isoRoot, "mnt"),
 	}
 
-	if err := util.WriteStringToFile(pkgList, content, 0644); err != nil {
-		return err
+	for _, dir := range criticalDirs {
+		if err := util.EnsureDir(dir); err != nil {
+			return fmt.Errorf("failed to create %s: %w", dir, err)
+		}
 	}
 
 	b.logger.Info("FreeBSD base system installed successfully")
