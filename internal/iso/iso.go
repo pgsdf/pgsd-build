@@ -1,293 +1,251 @@
 package iso
 
 import (
-    "fmt"
-    "os"
-    "path/filepath"
-    "time"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
-    "github.com/pgsdf/pgsdbuild/internal/config"
+	"github.com/pgsdf/pgsdbuild/internal/build"
+	"github.com/pgsdf/pgsdbuild/internal/config"
+	"github.com/pgsdf/pgsdbuild/internal/util"
 )
 
-const (
-    isoWorkDir  = "work/iso"
-    isoOutputDir = "iso"
-)
+// Builder builds bootable ISO images.
+type Builder struct {
+	config *build.Config
+	logger *util.Logger
+}
 
-// BuildBootenvISO implements the boot environment ISO build pipeline.
-func BuildBootenvISO(cfg config.VariantConfig) error {
-    fmt.Printf("[iso] Starting bootenv ISO build for %s\n", cfg.ID)
+// NewBuilder creates a new ISO Builder.
+func NewBuilder(cfg *build.Config, logger *util.Logger) *Builder {
+	return &Builder{
+		config: cfg,
+		logger: logger,
+	}
+}
 
-    // Create working directories
-    workPath := filepath.Join(isoWorkDir, cfg.ID)
-    if err := os.MkdirAll(workPath, 0755); err != nil {
-        return fmt.Errorf("failed to create work directory: %w", err)
-    }
-    defer os.RemoveAll(workPath) // Clean up work directory
+// Build implements the boot environment ISO build pipeline.
+func (b *Builder) Build(cfg config.VariantConfig) error {
+	b.logger.Info("Starting bootenv ISO build for %s", cfg.ID)
 
-    outputPath := filepath.Join(isoOutputDir, cfg.ID+".iso")
-    if err := os.MkdirAll(isoOutputDir, 0755); err != nil {
-        return fmt.Errorf("failed to create output directory: %w", err)
-    }
+	// Create working directories
+	workPath := filepath.Join(b.config.GetWorkDir(), "iso", cfg.ID)
+	if err := util.EnsureDir(workPath); err != nil {
+		return err
+	}
 
-    // Step 1: Build root filesystem for ISO
-    isoRoot := filepath.Join(workPath, "root")
-    if err := os.MkdirAll(isoRoot, 0755); err != nil {
-        return fmt.Errorf("failed to create ISO root: %w", err)
-    }
+	if !b.config.KeepWork {
+		defer util.CleanupDir(workPath)
+	}
 
-    fmt.Println("[iso] Building root filesystem...")
-    if err := buildISOFilesystem(cfg, isoRoot); err != nil {
-        return fmt.Errorf("failed to build ISO filesystem: %w", err)
-    }
+	outputPath := filepath.Join(b.config.GetISODir(), cfg.ID+".iso")
+	if err := util.EnsureDir(b.config.GetISODir()); err != nil {
+		return err
+	}
 
-    // Step 2: Install packages
-    fmt.Println("[iso] Installing packages...")
-    if err := installISOPackages(cfg, isoRoot); err != nil {
-        return fmt.Errorf("failed to install packages: %w", err)
-    }
+	// Step 1: Build root filesystem for ISO
+	isoRoot := filepath.Join(workPath, "root")
+	if err := util.EnsureDir(isoRoot); err != nil {
+		return err
+	}
 
-    // Step 3: Apply overlays
-    fmt.Println("[iso] Applying overlays...")
-    if err := applyISOOverlays(cfg, isoRoot); err != nil {
-        return fmt.Errorf("failed to apply overlays: %w", err)
-    }
+	b.logger.Debug("Building root filesystem...")
+	if err := b.buildISOFilesystem(cfg, isoRoot); err != nil {
+		return fmt.Errorf("failed to build ISO filesystem: %w", err)
+	}
 
-    // Step 4: Copy system images
-    if cfg.ImagesDir != "" {
-        fmt.Println("[iso] Copying system images...")
-        if err := copySystemImages(cfg, isoRoot); err != nil {
-            return fmt.Errorf("failed to copy system images: %w", err)
-        }
-    }
+	// Step 2: Install packages
+	b.logger.Debug("Installing packages...")
+	if err := b.installISOPackages(cfg, isoRoot); err != nil {
+		return fmt.Errorf("failed to install packages: %w", err)
+	}
 
-    // Step 5: Register Arcan target
-    fmt.Println("[iso] Registering Arcan installer target...")
-    if err := registerArcanTarget(isoRoot); err != nil {
-        return fmt.Errorf("failed to register Arcan target: %w", err)
-    }
+	// Step 3: Apply overlays
+	b.logger.Debug("Applying overlays...")
+	if err := b.applyISOOverlays(cfg, isoRoot); err != nil {
+		return fmt.Errorf("failed to apply overlays: %w", err)
+	}
 
-    // Step 6: Assemble ISO image
-    fmt.Println("[iso] Assembling ISO image...")
-    if err := assembleISO(cfg, isoRoot, outputPath); err != nil {
-        return fmt.Errorf("failed to assemble ISO: %w", err)
-    }
+	// Step 4: Copy system images
+	if cfg.ImagesDir != "" {
+		b.logger.Debug("Copying system images...")
+		if err := b.copySystemImages(cfg, isoRoot); err != nil {
+			return fmt.Errorf("failed to copy system images: %w", err)
+		}
+	}
 
-    fmt.Printf("[iso] ISO build complete! Output: %s\n", outputPath)
-    return nil
+	// Step 5: Register Arcan target
+	b.logger.Debug("Registering Arcan installer target...")
+	if err := b.registerArcanTarget(isoRoot); err != nil {
+		return fmt.Errorf("failed to register Arcan target: %w", err)
+	}
+
+	// Step 6: Assemble ISO image
+	b.logger.Debug("Assembling ISO image...")
+	if err := b.assembleISO(cfg, isoRoot, outputPath); err != nil {
+		return fmt.Errorf("failed to assemble ISO: %w", err)
+	}
+
+	b.logger.Info("ISO build complete! Output: %s", outputPath)
+	return nil
 }
 
 // buildISOFilesystem creates the base directory structure for the ISO.
-func buildISOFilesystem(cfg config.VariantConfig, isoRoot string) error {
-    // Create standard FreeBSD directory structure
-    dirs := []string{
-        "bin", "boot", "dev", "etc", "lib", "libexec",
-        "mnt", "proc", "rescue", "root", "sbin", "tmp",
-        "usr/bin", "usr/lib", "usr/local/bin", "usr/local/etc",
-        "usr/local/lib", "usr/local/share", "usr/sbin",
-        "usr/share", "var/log", "var/run", "var/tmp",
-    }
+func (b *Builder) buildISOFilesystem(cfg config.VariantConfig, isoRoot string) error {
+	// Create standard FreeBSD directory structure
+	dirs := []string{
+		"bin", "boot", "dev", "etc", "lib", "libexec",
+		"mnt", "proc", "rescue", "root", "sbin", "tmp",
+		"usr/bin", "usr/lib", "usr/local/bin", "usr/local/etc",
+		"usr/local/lib", "usr/local/share", "usr/sbin",
+		"usr/share", "var/log", "var/run", "var/tmp",
+	}
 
-    for _, dir := range dirs {
-        path := filepath.Join(isoRoot, dir)
-        if err := os.MkdirAll(path, 0755); err != nil {
-            return err
-        }
-    }
+	for _, dir := range dirs {
+		path := filepath.Join(isoRoot, dir)
+		if err := util.EnsureDir(path); err != nil {
+			return err
+		}
+	}
 
-    fmt.Println("[iso] Created base filesystem structure")
-    return nil
+	b.logger.Debug("Created base filesystem structure")
+	return nil
 }
 
 // installISOPackages installs packages into the ISO root.
-func installISOPackages(cfg config.VariantConfig, isoRoot string) error {
-    // On FreeBSD:
-    // pkg -r isoRoot install -y <packages>
+func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) error {
+	// On FreeBSD:
+	// pkg -r isoRoot install -y <packages>
 
-    // For prototype, create a marker file showing what packages would be installed
-    pkgList := filepath.Join(isoRoot, "installed-packages.txt")
-    f, err := os.Create(pkgList)
-    if err != nil {
-        return err
-    }
-    defer f.Close()
+	// For prototype, create a marker file showing what packages would be installed
+	pkgList := filepath.Join(isoRoot, "installed-packages.txt")
+	content := fmt.Sprintf("# Bootenv ISO: %s\n# Package sets installed:\n", cfg.ID)
+	for _, pkgSet := range cfg.PkgLists {
+		content += fmt.Sprintf("# - %s\n", pkgSet)
+	}
 
-    fmt.Fprintf(f, "# Bootenv ISO: %s\n", cfg.ID)
-    fmt.Fprintf(f, "# Package sets installed:\n")
-    for _, pkgSet := range cfg.PkgLists {
-        fmt.Fprintf(f, "# - %s\n", pkgSet)
-    }
+	if err := util.WriteStringToFile(pkgList, content, 0644); err != nil {
+		return err
+	}
 
-    fmt.Printf("[iso] Installed package lists: %v\n", cfg.PkgLists)
-    return nil
+	b.logger.Debug("Installed package lists: %v", cfg.PkgLists)
+	return nil
 }
 
 // applyISOOverlays applies filesystem overlays to the ISO root.
-func applyISOOverlays(cfg config.VariantConfig, isoRoot string) error {
-    for _, overlay := range cfg.Overlays {
-        overlayPath := filepath.Join("overlays", overlay)
+func (b *Builder) applyISOOverlays(cfg config.VariantConfig, isoRoot string) error {
+	overlaysDir := b.config.GetOverlaysDir()
 
-        // Check if overlay exists
-        if _, err := os.Stat(overlayPath); os.IsNotExist(err) {
-            return fmt.Errorf("overlay %s not found at %s", overlay, overlayPath)
-        }
+	for _, overlay := range cfg.Overlays {
+		overlayPath := filepath.Join(overlaysDir, overlay)
 
-        // Copy overlay contents to isoRoot
-        if err := copyOverlay(overlayPath, isoRoot); err != nil {
-            return fmt.Errorf("failed to copy overlay %s: %w", overlay, err)
-        }
+		// Check if overlay exists
+		if !util.DirExists(overlayPath) {
+			return fmt.Errorf("overlay %s not found at %s", overlay, overlayPath)
+		}
 
-        fmt.Printf("[iso] Applied overlay: %s\n", overlay)
-    }
-    return nil
+		// Copy overlay contents to isoRoot
+		if err := util.CopyOverlay(overlayPath, isoRoot); err != nil {
+			return fmt.Errorf("failed to copy overlay %s: %w", overlay, err)
+		}
+
+		b.logger.Debug("Applied overlay: %s", overlay)
+	}
+	return nil
 }
 
 // copySystemImages copies built system images into the ISO.
-func copySystemImages(cfg config.VariantConfig, isoRoot string) error {
-    imagesDestDir := filepath.Join(isoRoot, cfg.ImagesDir[1:]) // Remove leading /
-    if err := os.MkdirAll(imagesDestDir, 0755); err != nil {
-        return err
-    }
+func (b *Builder) copySystemImages(cfg config.VariantConfig, isoRoot string) error {
+	imagesDestDir := filepath.Join(isoRoot, cfg.ImagesDir[1:]) // Remove leading /
+	if err := util.EnsureDir(imagesDestDir); err != nil {
+		return err
+	}
 
-    // Look for artifacts in the artifacts directory
-    artifactsDir := "artifacts"
-    entries, err := os.ReadDir(artifactsDir)
-    if err != nil {
-        // If no artifacts directory exists, that's okay
-        if os.IsNotExist(err) {
-            fmt.Println("[iso] No system images found in artifacts/")
-            return nil
-        }
-        return err
-    }
+	// Look for artifacts in the artifacts directory
+	artifactsDir := b.config.GetArtifactsDir()
+	entries, err := os.ReadDir(artifactsDir)
+	if err != nil {
+		// If no artifacts directory exists, that's okay
+		if os.IsNotExist(err) {
+			b.logger.Warn("No system images found in %s", artifactsDir)
+			return nil
+		}
+		return fmt.Errorf("failed to read artifacts directory: %w", err)
+	}
 
-    imageCount := 0
-    for _, entry := range entries {
-        if !entry.IsDir() {
-            continue
-        }
+	imageCount := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
 
-        imageName := entry.Name()
-        imageArtifactDir := filepath.Join(artifactsDir, imageName)
-        imageDestDir := filepath.Join(imagesDestDir, imageName)
+		imageName := entry.Name()
+		imageArtifactDir := filepath.Join(artifactsDir, imageName)
+		imageDestDir := filepath.Join(imagesDestDir, imageName)
 
-        // Copy the entire artifact directory
-        if err := copyDir(imageArtifactDir, imageDestDir); err != nil {
-            return fmt.Errorf("failed to copy image %s: %w", imageName, err)
-        }
+		// Copy the entire artifact directory
+		if err := util.CopyDir(imageArtifactDir, imageDestDir); err != nil {
+			return fmt.Errorf("failed to copy image %s: %w", imageName, err)
+		}
 
-        fmt.Printf("[iso] Copied system image: %s\n", imageName)
-        imageCount++
-    }
+		b.logger.Debug("Copied system image: %s", imageName)
+		imageCount++
+	}
 
-    fmt.Printf("[iso] Copied %d system image(s) to %s\n", imageCount, cfg.ImagesDir)
-    return nil
+	b.logger.Info("Copied %d system image(s) to %s", imageCount, cfg.ImagesDir)
+	return nil
 }
 
 // registerArcanTarget creates the Arcan target registration metadata.
-func registerArcanTarget(isoRoot string) error {
-    // On a real system, this would use arcan_db to register the target
-    // For prototype, we'll create a marker file
+func (b *Builder) registerArcanTarget(isoRoot string) error {
+	// On a real system, this would use arcan_db to register the target
+	// For prototype, we'll create a marker file
 
-    arcanDir := filepath.Join(isoRoot, "usr/local/share/arcan")
-    if err := os.MkdirAll(arcanDir, 0755); err != nil {
-        return err
-    }
+	arcanDir := filepath.Join(isoRoot, "usr/local/share/arcan")
+	if err := util.EnsureDir(arcanDir); err != nil {
+		return err
+	}
 
-    targetFile := filepath.Join(arcanDir, "pgsd-installer-target.txt")
-    f, err := os.Create(targetFile)
-    if err != nil {
-        return err
-    }
-    defer f.Close()
+	targetFile := filepath.Join(arcanDir, "pgsd-installer-target.txt")
+	content := fmt.Sprintf("# PGSD Installer Arcan Target\n"+
+		"# Registered at: %s\n\n"+
+		"target_name: pgsd-installer\n"+
+		"target_type: BINARY\n"+
+		"target_path: /usr/local/bin/pgsd-inst\n"+
+		"config: default\n",
+		time.Now().Format(time.RFC3339))
 
-    fmt.Fprintf(f, "# PGSD Installer Arcan Target\n")
-    fmt.Fprintf(f, "# Registered at: %s\n\n", time.Now().Format(time.RFC3339))
-    fmt.Fprintf(f, "target_name: pgsd-installer\n")
-    fmt.Fprintf(f, "target_type: BINARY\n")
-    fmt.Fprintf(f, "target_path: /usr/local/bin/pgsd-inst\n")
-    fmt.Fprintf(f, "config: default\n")
+	if err := util.WriteStringToFile(targetFile, content, 0644); err != nil {
+		return err
+	}
 
-    fmt.Println("[iso] Registered pgsd-installer as Arcan target")
-    return nil
+	b.logger.Debug("Registered pgsd-installer as Arcan target")
+	return nil
 }
 
 // assembleISO creates the final ISO image.
-func assembleISO(cfg config.VariantConfig, isoRoot, outputPath string) error {
-    // On FreeBSD, we would use:
-    // makefs -t cd9660 -o rockridge -o label=PGSD_BOOT outputPath isoRoot
+func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath string) error {
+	// On FreeBSD, we would use:
+	// makefs -t cd9660 -o rockridge -o label=PGSD_BOOT outputPath isoRoot
 
-    // For prototype, create a marker ISO file
-    f, err := os.Create(outputPath)
-    if err != nil {
-        return err
-    }
-    defer f.Close()
+	// For prototype, create a marker ISO file
+	content := fmt.Sprintf("# PGSD Bootenv ISO (prototype)\n"+
+		"# Variant: %s (%s)\n"+
+		"# Created: %s\n"+
+		"# Package lists: %v\n"+
+		"# Overlays: %v\n"+
+		"# Images dir: %s\n",
+		cfg.ID, cfg.Name,
+		time.Now().Format(time.RFC3339),
+		cfg.PkgLists,
+		cfg.Overlays,
+		cfg.ImagesDir)
 
-    fmt.Fprintf(f, "# PGSD Bootenv ISO (prototype)\n")
-    fmt.Fprintf(f, "# Variant: %s (%s)\n", cfg.ID, cfg.Name)
-    fmt.Fprintf(f, "# Created: %s\n", time.Now().Format(time.RFC3339))
-    fmt.Fprintf(f, "# Package lists: %v\n", cfg.PkgLists)
-    fmt.Fprintf(f, "# Overlays: %v\n", cfg.Overlays)
-    fmt.Fprintf(f, "# Images dir: %s\n", cfg.ImagesDir)
+	if err := util.WriteStringToFile(outputPath, content, 0644); err != nil {
+		return err
+	}
 
-    fmt.Printf("[iso] Created ISO image: %s\n", outputPath)
-    return nil
-}
-
-// copyOverlay recursively copies overlay files.
-func copyOverlay(src, dst string) error {
-    return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-        if err != nil {
-            return err
-        }
-
-        // Calculate relative path
-        relPath, err := filepath.Rel(src, path)
-        if err != nil {
-            return err
-        }
-
-        dstPath := filepath.Join(dst, relPath)
-
-        if info.IsDir() {
-            return os.MkdirAll(dstPath, info.Mode())
-        }
-
-        // Copy file
-        return copyFile(path, dstPath, info.Mode())
-    })
-}
-
-// copyDir recursively copies a directory.
-func copyDir(src, dst string) error {
-    return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-        if err != nil {
-            return err
-        }
-
-        // Calculate relative path
-        relPath, err := filepath.Rel(src, path)
-        if err != nil {
-            return err
-        }
-
-        dstPath := filepath.Join(dst, relPath)
-
-        if info.IsDir() {
-            return os.MkdirAll(dstPath, info.Mode())
-        }
-
-        // Copy file
-        return copyFile(path, dstPath, info.Mode())
-    })
-}
-
-// copyFile copies a single file.
-func copyFile(src, dst string, mode os.FileMode) error {
-    data, err := os.ReadFile(src)
-    if err != nil {
-        return err
-    }
-    return os.WriteFile(dst, data, mode)
+	b.logger.Debug("Created ISO image: %s", outputPath)
+	return nil
 }

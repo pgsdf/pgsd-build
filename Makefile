@@ -8,6 +8,14 @@ ARTIFACTSDIR := artifacts
 ISODIR := iso
 WORKDIR := work
 
+# Version information
+VERSION := 0.1.0
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS := -X main.Version=$(VERSION) \
+           -X main.GitCommit=$(GIT_COMMIT) \
+           -X main.BuildDate=$(BUILD_DATE)
+
 # Binary names
 PGSDBUILD := $(BINDIR)/pgsdbuild
 PGSDINST := $(BINDIR)/pgsd-inst
@@ -30,9 +38,9 @@ build: build-pgsdbuild build-installer
 
 # Build pgsdbuild
 build-pgsdbuild:
-	@echo "Building pgsdbuild..."
+	@echo "Building pgsdbuild $(VERSION) (commit: $(GIT_COMMIT))..."
 	@mkdir -p $(BINDIR)
-	$(GO) build $(GOFLAGS) -o $(PGSDBUILD) ./cmd/pgsdbuild
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(PGSDBUILD) ./cmd/pgsdbuild
 
 # Build pgsd-inst installer
 build-installer:
