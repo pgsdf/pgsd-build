@@ -1,0 +1,63 @@
+# Boot environment specific configuration
+# This file is sourced by rc.conf for live ISO environment
+
+# Enable PGSD boot environment initialization
+pgsd_bootenv_init_enable="YES"
+
+# Memory filesystem for writable areas (live environment)
+# In a real boot environment, these would be tmpfs or mfs
+tmpmfs="YES"
+tmpsize="512m"
+varmfs="YES"
+varsize="256m"
+
+# Auto-mount CD/DVD for accessing embedded images
+# The images_dir points to /usr/local/share/pgsd/images on the ISO
+
+# Network auto-configuration
+# Try DHCP on all interfaces
+background_dhclient="YES"
+synchronous_dhclient="NO"
+
+# Do NOT save configuration changes (live environment)
+# This prevents accidental writes to the ISO
+
+# Console settings for live boot
+# Enable all consoles for debugging
+console="vidconsole,comconsole"
+
+# Performance tuning for live environment
+# Reduce disk I/O since we're running from ISO
+kern_securelevel_enable="NO"     # Disable secure level for live environment
+clear_tmp_enable="NO"             # Don't clear /tmp (it's already tmpfs)
+
+# SSH configuration for live access
+sshd_enable="YES"
+# Allow root login for rescue (with password)
+# In production, this would be configured more securely
+
+# Time synchronization
+ntpd_enable="YES"
+ntpd_sync_on_start="YES"
+
+# Desktop services for live environment
+dbus_enable="YES"
+sndiod_enable="YES"
+
+# Network services
+wpa_supplicant_enable="YES"
+dhcpcd_enable="YES"
+
+# Disable unnecessary services for live environment
+sendmail_enable="NONE"
+sendmail_submit_enable="NO"
+sendmail_outbound_enable="NO"
+sendmail_msp_queue_enable="NO"
+syslogd_flags="-ss"               # Reduce logging verbosity
+
+# Power management for laptops
+powerd_enable="YES"
+powerd_flags="-a hiadaptive -b adaptive"
+
+# Message of the day
+update_motd="NO"                  # Use custom motd

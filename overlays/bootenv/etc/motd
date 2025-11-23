@@ -1,0 +1,32 @@
+
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║   ██████╗  ██████╗ ███████╗██████╗                          ║
+║   ██╔══██╗██╔════╝ ██╔════╝██╔══██╗                         ║
+║   ██████╔╝██║  ███╗███████╗██║  ██║                         ║
+║   ██╔═══╝ ██║   ██║╚════██║██║  ██║                         ║
+║   ██║     ╚██████╔╝███████║██████╔╝                         ║
+║   ╚═╝      ╚═════╝ ╚══════╝╚═════╝                          ║
+║                                                              ║
+║   Pacific Grove Software Distribution                        ║
+║   Live Boot Environment                                      ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+
+Welcome to the PGSD Live Environment!
+
+This is a temporary system running from the installation media.
+You can use this environment to:
+  • Install PGSD on your computer
+  • Try PGSD before installing
+  • Rescue and recover existing systems
+  • Access the network and browse the web
+
+To Install PGSD:
+  Type: sudo pgsd-install
+
+For more information:
+  Type: pgsd-welcome
+
+Default login: pgsd / pgsd
+
