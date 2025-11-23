@@ -403,8 +403,22 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 
 	b.logger.Info("Using ISO creation tool: %s (%s)", isoTool, isoToolPath)
 
+	// Convert paths to absolute to avoid working directory issues
+	absIsoRoot, err := filepath.Abs(isoRoot)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for ISO root: %w", err)
+	}
+
+	absOutputPath, err := filepath.Abs(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for output: %w", err)
+	}
+
+	b.logger.Debug("ISO root (absolute): %s", absIsoRoot)
+	b.logger.Debug("Output path (absolute): %s", absOutputPath)
+
 	// Create ISO using the detected tool
-	if err := b.createISOWithTool(isoTool, isoToolPath, outputPath, isoRoot, label, hasCdboot); err != nil {
+	if err := b.createISOWithTool(isoTool, isoToolPath, absOutputPath, absIsoRoot, label, hasCdboot); err != nil {
 		return fmt.Errorf("%s failed: %w", isoTool, err)
 	}
 
