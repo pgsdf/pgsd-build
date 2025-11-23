@@ -2,7 +2,7 @@
 
 **Pacific Grove Software Distribution (PGSD)** is a FreeBSD-based distribution build and installation system featuring ZFS-backed system images, declarative Lua configuration, and a user-friendly TUI installer.
 
-## 🎯 Overview
+## Overview
 
 This system provides a complete solution for building, distributing, and installing FreeBSD-based systems:
 
@@ -12,7 +12,7 @@ This system provides a complete solution for building, distributing, and install
 - **ZFS-Native** - Atomic installations with snapshot/rollback capabilities
 - **Comprehensive Error Handling** - User-friendly validation and helpful error messages
 
-## ✨ Features
+## Features
 
 ### Build System
 - **Lua-based configuration** - Declarative recipes for images and boot environments
@@ -35,7 +35,7 @@ This system provides a complete solution for building, distributing, and install
 - **Helpful hints** - Context-aware suggestions for common issues
 - **Root privilege checking** - Confirms proper permissions before installation
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -71,7 +71,7 @@ sudo make install
 sudo make uninstall
 ```
 
-## 📖 Usage
+## Usage
 
 ### Building Images
 
@@ -120,7 +120,7 @@ The installer will guide you through:
 4. **Installation** - Automated ZFS-based installation
 5. **Completion** - Ready to reboot into new system
 
-## 📁 Directory Structure
+## Directory Structure
 
 ```
 pgsd-build/
@@ -144,7 +144,7 @@ pgsd-build/
 └── docs/                   # Architecture documentation
 ```
 
-## 🔧 Configuration
+## Configuration
 
 ### Image Recipe Example (`images/my-image.lua`)
 
@@ -188,7 +188,7 @@ return {
 }
 ```
 
-## 🛠️ Makefile Targets
+## Makefile Targets
 
 ### Building
 - `make` or `make all` - Build both tools
@@ -214,7 +214,7 @@ return {
 - `make install` - Install to /usr/local/bin
 - `make uninstall` - Remove from /usr/local/bin
 
-## 🔍 Error Messages & Troubleshooting
+## Error Messages & Troubleshooting
 
 The system provides helpful error messages with context and hints:
 
@@ -257,7 +257,7 @@ sudo pgsd-inst
 - Ensure you've run `pgsdbuild image <name>` before building ISOs
 - Check `artifacts/<image-id>/` contains `root.zfs.xz`, `efi.img`, and `manifest.toml`
 
-## 🏗️ Architecture
+## Architecture
 
 ### Build Pipeline
 
@@ -284,7 +284,7 @@ sudo pgsd-inst
 5. **EFI Setup** - Copy EFI partition and bootloader
 6. **Finalization** - Set bootfs and export pool
 
-## 📚 Documentation
+## Documentation
 
 Detailed documentation available in `docs/`:
 - `ARCHITECTURE.md` - System architecture overview
@@ -292,7 +292,7 @@ Detailed documentation available in `docs/`:
 - `BUILD_PIPELINE.md` - Build pipeline details
 - `ROADMAP.md` - Development roadmap
 
-## 🤝 Contributing
+## Contributing
 
 This is a prototype demonstrating the PGSD build system architecture. Contributions welcome for:
 - Production-ready FreeBSD integration
@@ -301,11 +301,11 @@ This is a prototype demonstrating the PGSD build system architecture. Contributi
 - Secure Boot integration
 - Automated testing
 
-## 📄 License
+## License
 
 See LICENSE file for details.
 
-## 🔗 Resources
+## Resources
 
 - Architecture Diagram: `docs/ARCHITECTURE_DIAGRAM.md`
 - Design Document: `docs/DESIGN.md`

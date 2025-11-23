@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to PGSD! This document provides guidelines for development and contributions.
 
-## 🛠️ Development Setup
+## Development Setup
 
 ### Prerequisites
 - Go 1.21 or later
@@ -28,7 +28,7 @@ make build
 make test
 ```
 
-## 📝 Code Style
+## Code Style
 
 ### Go Code Formatting
 
@@ -48,7 +48,7 @@ make lint
 4. **Testing** - Add tests for new functionality
 5. **Commits** - Write clear, descriptive commit messages
 
-## 🎯 Error Handling Guidelines
+## Error Handling Guidelines
 
 PGSD emphasizes exceptional error handling. Follow these patterns:
 
@@ -135,7 +135,7 @@ if len(errors) > 0 {
 }
 ```
 
-## 🔍 Testing
+## Testing
 
 ### Running Tests
 
@@ -171,7 +171,7 @@ func TestLoadImageConfig(t *testing.T) {
 }
 ```
 
-## 📦 Project Structure
+## Project Structure
 
 ### Adding New Features
 
@@ -197,7 +197,7 @@ installer/
 └── internal/install/  # Installation pipeline
 ```
 
-## 🐛 Debugging
+## Debugging
 
 ### Enable Verbose Output
 
@@ -219,7 +219,7 @@ go run -race ./cmd/pgsdbuild/...
 - Run `make clean` and rebuild
 - Check `go.mod` is up to date (`make deps`)
 
-## 📋 Commit Guidelines
+## Commit Guidelines
 
 ### Commit Message Format
 
@@ -252,7 +252,7 @@ feat: Add disk size validation in installer
 Closes #123
 ```
 
-## 🔄 Pull Request Process
+## Pull Request Process
 
 1. **Fork the repository**
 2. **Create a feature branch** - `git checkout -b feature/my-feature`
@@ -272,7 +272,7 @@ Closes #123
 - [ ] No breaking changes (or documented)
 - [ ] Error messages are helpful
 
-## 🎨 Code Review
+## Code Review
 
 Reviewers will check:
 - **Functionality** - Does it work as intended?
@@ -281,7 +281,7 @@ Reviewers will check:
 - **Documentation** - Is it well documented?
 - **Style** - Does it follow project conventions?
 
-## 🚀 Release Process
+## Release Process
 
 1. Update version in relevant files
 2. Update CHANGELOG.md
@@ -289,14 +289,14 @@ Reviewers will check:
 4. Push tag: `git push origin v1.0.0`
 5. Create GitHub release
 
-## 💡 Feature Requests
+## Feature Requests
 
 Have an idea? Open an issue with:
 - Clear description of the feature
 - Use cases and benefits
 - Proposed implementation (optional)
 
-## 🐞 Bug Reports
+## Bug Reports
 
 Found a bug? Open an issue with:
 - Steps to reproduce
@@ -305,20 +305,20 @@ Found a bug? Open an issue with:
 - Error messages (if any)
 - System information (OS, Go version)
 
-## 📚 Resources
+## Resources
 
 - [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments)
 - [Effective Go](https://golang.org/doc/effective_go.html)
 - [FreeBSD Handbook](https://docs.freebsd.org/en/books/handbook/)
 - [ZFS Documentation](https://openzfs.github.io/openzfs-docs/)
 
-## 📞 Getting Help
+## Getting Help
 
 - Open an issue for bugs or feature requests
 - Check existing documentation in `docs/`
 - Review code comments for implementation details
 
-## 📄 License
+## License
 
 By contributing, you agree that your contributions will be licensed under the same license as the project.
 
