@@ -42,6 +42,22 @@ func Install(cfg Config) error {
 		return fmt.Errorf("system requirements not met: %w", err)
 	}
 
+	// Track installation state for cleanup
+	var poolCreated bool
+	var installComplete bool
+
+	// Cleanup on failure
+	defer func() {
+		if !installComplete && poolCreated {
+			// Best-effort cleanup: forcefully export the pool
+			log("Installation failed, cleaning up ZFS pool...")
+			if err := exec.Command("zpool", "export", "-f", cfg.ZpoolName).Run(); err != nil {
+				// Ignore cleanup errors, just log them
+				log(fmt.Sprintf("Warning: Failed to cleanup ZFS pool: %v", err))
+			}
+		}
+	}()
+
 	// Step 1: Partition the disk
 	log("Partitioning disk...")
 	if err := partitionDisk(cfg.TargetDisk); err != nil {
@@ -50,17 +66,18 @@ func Install(cfg Config) error {
 
 	// Step 2: Create EFI filesystem
 	log("Creating EFI system partition...")
-	efiPart := cfg.TargetDisk + "p1"
+	efiPart := "/dev/" + cfg.TargetDisk + "p1"
 	if err := createEFIFilesystem(efiPart); err != nil {
 		return fmt.Errorf("EFI filesystem creation failed: %w\nHint: The partition may not be properly created", err)
 	}
 
 	// Step 3: Create ZFS pool
 	log("Creating ZFS pool...")
-	zfsPart := cfg.TargetDisk + "p2"
+	zfsPart := "/dev/" + cfg.TargetDisk + "p2"
 	if err := createZFSPool(cfg.ZpoolName, zfsPart); err != nil {
 		return fmt.Errorf("ZFS pool creation failed: %w\nHint: Ensure ZFS kernel module is loaded (kldload zfs)", err)
 	}
+	poolCreated = true // Mark pool as created for cleanup
 
 	// Step 4: Extract root filesystem
 	log("Extracting root filesystem (this may take several minutes)...")
@@ -87,6 +104,9 @@ func Install(cfg Config) error {
 	if err := finalizeInstallation(cfg.ZpoolName); err != nil {
 		return fmt.Errorf("installation finalization failed: %w", err)
 	}
+
+	// Mark installation as complete to prevent cleanup
+	installComplete = true
 
 	log("Installation complete!")
 	return nil
@@ -232,8 +252,8 @@ func copyEFIPartition(efiImg, efiPart string) error {
 // installBootloader installs the FreeBSD bootloader
 func installBootloader(disk, poolName string) error {
 	// Verify EFI partition exists first
-	efiPart := disk + "p1"
-	if err := verifyEFIPartition(efiPart); err != nil {
+	efiPartDev := "/dev/" + disk + "p1"
+	if err := verifyEFIPartition(efiPartDev); err != nil {
 		return fmt.Errorf("EFI partition verification failed: %w", err)
 	}
 
@@ -286,6 +306,28 @@ func validateConfig(cfg *Config) error {
 	}
 	if cfg.ZpoolName == "" {
 		return fmt.Errorf("zpool name is required")
+	}
+
+	// Validate and clean image path to prevent path traversal
+	cfg.ImagePath = filepath.Clean(cfg.ImagePath)
+	if strings.Contains(cfg.ImagePath, "..") {
+		return fmt.Errorf("image path must not contain '..' (path traversal detected): %s", cfg.ImagePath)
+	}
+
+	// Additional security: ensure path is absolute or relative to known safe dirs
+	if filepath.IsAbs(cfg.ImagePath) {
+		// Absolute paths should be under /usr/local/share/pgsd/images
+		if !strings.HasPrefix(cfg.ImagePath, "/usr/local/share/pgsd/images") &&
+			!strings.HasPrefix(cfg.ImagePath, "/tmp") &&
+			!strings.HasPrefix(cfg.ImagePath, "/var/tmp") {
+			// For development, also allow current directory artifacts
+			if cwd, err := os.Getwd(); err == nil {
+				artifactsPath := filepath.Join(cwd, "artifacts")
+				if !strings.HasPrefix(cfg.ImagePath, artifactsPath) {
+					return fmt.Errorf("image path must be under /usr/local/share/pgsd/images or artifacts directory: %s", cfg.ImagePath)
+				}
+			}
+		}
 	}
 
 	// Check if image directory exists
@@ -367,15 +409,18 @@ func normalizeDevicePath(device string) string {
 }
 
 // verifyEFIPartition checks if the EFI partition exists and is properly formatted
-func verifyEFIPartition(efiPart string) error {
+// efiPartDev should be the full device path (e.g., "/dev/ada0p1")
+func verifyEFIPartition(efiPartDev string) error {
 	// Check if the device exists
-	devPath := "/dev/" + efiPart
-	if _, err := os.Stat(devPath); err != nil {
-		return fmt.Errorf("EFI partition device not found: %s", devPath)
+	if _, err := os.Stat(efiPartDev); err != nil {
+		return fmt.Errorf("EFI partition device not found: %s", efiPartDev)
 	}
 
+	// Extract partition name for gpart (without /dev/)
+	partName := strings.TrimPrefix(efiPartDev, "/dev/")
+
 	// Try to get partition info using gpart show
-	cmd := exec.Command("gpart", "show", "-p", efiPart)
+	cmd := exec.Command("gpart", "show", "-p", partName)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to verify EFI partition: %w\nOutput: %s", err, output)
 	}

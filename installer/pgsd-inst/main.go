@@ -254,6 +254,13 @@ func (m model) viewConfirm() string {
 	b.WriteString("║           Confirmation                 ║\n")
 	b.WriteString("╚════════════════════════════════════════╝\n\n")
 
+	// Bounds checking to prevent panic
+	if m.selectedImg >= len(m.images) || m.selectedDisk >= len(m.disks) {
+		b.WriteString("Internal error: invalid selection\n\n")
+		b.WriteString("Press Enter to exit\n")
+		return b.String()
+	}
+
 	b.WriteString("You are about to install:\n\n")
 	b.WriteString(fmt.Sprintf("  Image: %s\n", m.images[m.selectedImg].ID))
 	b.WriteString(fmt.Sprintf("  Disk:  %s (%s)\n\n",
@@ -293,8 +300,15 @@ func (m model) viewComplete() string {
 	b.WriteString("╔════════════════════════════════════════╗\n")
 	b.WriteString("║      Installation Complete!            ║\n")
 	b.WriteString("╚════════════════════════════════════════╝\n\n")
-	b.WriteString("PGSD has been successfully installed to\n")
-	b.WriteString(fmt.Sprintf("%s\n\n", m.disks[m.selectedDisk].Device))
+
+	// Bounds checking to prevent panic
+	if m.selectedDisk >= len(m.disks) {
+		b.WriteString("PGSD has been successfully installed.\n\n")
+	} else {
+		b.WriteString("PGSD has been successfully installed to\n")
+		b.WriteString(fmt.Sprintf("%s\n\n", m.disks[m.selectedDisk].Device))
+	}
+
 	b.WriteString("You may now reboot your system.\n\n")
 	b.WriteString("Press Enter to exit\n")
 	return b.String()
@@ -390,8 +404,12 @@ func loadDisksFromGeom() []DiskInfo {
 			currentDisk = DiskInfo{}
 			inDisk = true
 			fields := strings.Fields(line)
-			if len(fields) >= 3 {
+			// Validate expected format: "Geom name: <device>"
+			if len(fields) >= 3 && fields[0] == "Geom" && fields[1] == "name:" {
 				currentDisk.Device = fields[2]
+			} else if len(fields) >= 2 {
+				// Fallback: try to extract device name anyway
+				currentDisk.Device = fields[len(fields)-1]
 			}
 		} else if inDisk {
 			// Parse Mediasize field
@@ -399,9 +417,11 @@ func loadDisksFromGeom() []DiskInfo {
 				fields := strings.Fields(line)
 				if len(fields) >= 3 {
 					// Format: "Mediasize: 21474836480 (20G)"
-					if len(fields) >= 4 && strings.HasPrefix(fields[3], "(") {
+					if len(fields) >= 4 && strings.HasPrefix(fields[3], "(") && strings.HasSuffix(fields[3], ")") {
+						// Use human-readable size in parentheses
 						currentDisk.Size = strings.Trim(fields[3], "()")
-					} else {
+					} else if len(fields) >= 2 {
+						// Convert bytes to human-readable
 						currentDisk.Size = formatBytes(fields[1])
 					}
 				}
@@ -410,6 +430,10 @@ func loadDisksFromGeom() []DiskInfo {
 			if strings.HasPrefix(line, "descr:") {
 				currentDisk.Model = strings.TrimPrefix(line, "descr:")
 				currentDisk.Model = strings.TrimSpace(currentDisk.Model)
+				// If model is empty, use generic name
+				if currentDisk.Model == "" {
+					currentDisk.Model = "Disk"
+				}
 			}
 		}
 	}
@@ -542,10 +566,10 @@ func (m model) performInstallation() tea.Cmd {
 
 		// Build a batch of log messages to send
 		var cmds []tea.Cmd
-		for _, log := range logs {
-			msg := log // Capture for closure
+		for i := range logs {
+			logMsg := logs[i] // Create new variable in loop scope
 			cmds = append(cmds, func() tea.Msg {
-				return installLogMsg(msg)
+				return installLogMsg(logMsg)
 			})
 		}
 
