@@ -63,6 +63,12 @@ func (b *Builder) Build(cfg config.VariantConfig) error {
 		return fmt.Errorf("failed to install packages: %w", err)
 	}
 
+	// Step 2.5: Install FreeBSD boot infrastructure
+	b.logger.Debug("Installing boot infrastructure...")
+	if err := b.installBootInfrastructure(isoRoot); err != nil {
+		return fmt.Errorf("failed to install boot infrastructure: %w", err)
+	}
+
 	// Step 3: Apply overlays
 	b.logger.Debug("Applying overlays...")
 	if err := b.applyISOOverlays(cfg, isoRoot); err != nil {
@@ -220,6 +226,103 @@ func (b *Builder) copySystemImages(cfg config.VariantConfig, isoRoot string) err
 	return nil
 }
 
+// installBootInfrastructure installs FreeBSD boot files needed for bootable ISO
+func (b *Builder) installBootInfrastructure(isoRoot string) error {
+	// Copy essential boot files from the running FreeBSD system
+	// This makes the ISO bootable in both BIOS and UEFI modes
+
+	bootDir := filepath.Join(isoRoot, "boot")
+
+	// Required boot files for BIOS boot
+	biosBootFiles := []string{
+		"/boot/cdboot",      // CD/DVD boot loader
+		"/boot/loader",      // Boot loader
+		"/boot/loader.rc",   // Loader configuration
+		"/boot/defaults/loader.conf", // Default loader settings
+	}
+
+	b.logger.Debug("Copying BIOS boot files...")
+	for _, srcPath := range biosBootFiles {
+		if _, err := os.Stat(srcPath); err != nil {
+			if os.IsNotExist(err) {
+				b.logger.Warn("Boot file not found (skipping): %s", srcPath)
+				continue
+			}
+			return fmt.Errorf("failed to access boot file %s: %w", srcPath, err)
+		}
+
+		// Determine destination path
+		relPath := strings.TrimPrefix(srcPath, "/boot/")
+		dstPath := filepath.Join(bootDir, relPath)
+
+		// Ensure destination directory exists
+		dstDir := filepath.Dir(dstPath)
+		if err := util.EnsureDir(dstDir); err != nil {
+			return err
+		}
+
+		// Copy the file
+		if err := util.CopyFile(srcPath, dstPath, 0644); err != nil {
+			return fmt.Errorf("failed to copy %s: %w", srcPath, err)
+		}
+	}
+
+	// Copy kernel (required for boot)
+	b.logger.Debug("Copying FreeBSD kernel...")
+	kernelSrc := "/boot/kernel/kernel"
+	if _, err := os.Stat(kernelSrc); err == nil {
+		kernelDir := filepath.Join(bootDir, "kernel")
+		if err := util.EnsureDir(kernelDir); err != nil {
+			return err
+		}
+		kernelDst := filepath.Join(kernelDir, "kernel")
+		if err := util.CopyFile(kernelSrc, kernelDst, 0755); err != nil {
+			return fmt.Errorf("failed to copy kernel: %w", err)
+		}
+	} else {
+		b.logger.Warn("Kernel not found at %s - ISO may not boot", kernelSrc)
+	}
+
+	// Copy essential kernel modules
+	b.logger.Debug("Copying kernel modules...")
+	modules := []string{
+		"zfs.ko",       // ZFS filesystem
+		"geom_label.ko", // GEOM labels
+		"ahci.ko",      // AHCI disk controller
+	}
+
+	for _, module := range modules {
+		srcPath := filepath.Join("/boot/kernel", module)
+		if _, err := os.Stat(srcPath); err == nil {
+			dstPath := filepath.Join(bootDir, "kernel", module)
+			if err := util.CopyFile(srcPath, dstPath, 0644); err != nil {
+				b.logger.Warn("Failed to copy module %s: %v", module, err)
+			}
+		}
+	}
+
+	// Set up EFI boot directory for UEFI support
+	b.logger.Debug("Setting up EFI boot...")
+	efiDir := filepath.Join(isoRoot, "EFI", "BOOT")
+	if err := util.EnsureDir(efiDir); err != nil {
+		return err
+	}
+
+	// Copy EFI boot loader if available
+	efiBootSrc := "/boot/boot1.efi"
+	if _, err := os.Stat(efiBootSrc); err == nil {
+		efiBootDst := filepath.Join(efiDir, "BOOTX64.EFI")
+		if err := util.CopyFile(efiBootSrc, efiBootDst, 0644); err != nil {
+			b.logger.Warn("Failed to copy EFI bootloader: %v", err)
+		}
+	} else {
+		b.logger.Warn("EFI bootloader not found - UEFI boot may not work")
+	}
+
+	b.logger.Info("Boot infrastructure installed")
+	return nil
+}
+
 // registerArcanTarget creates the Arcan target registration metadata.
 func (b *Builder) registerArcanTarget(isoRoot string) error {
 	// On a real system, this would use arcan_db to register the target
@@ -266,20 +369,44 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 	b.logger.Debug("Creating ISO filesystem with makefs...")
 	b.logger.Debug("ISO label: %s", label)
 
-	// makefs options for cd9660 ISO:
+	// Check if cdboot file exists before configuring boot
+	cdbootPath := filepath.Join(isoRoot, "boot/cdboot")
+	hasCdboot := false
+	if _, err := os.Stat(cdbootPath); err == nil {
+		hasCdboot = true
+		b.logger.Debug("BIOS boot file found: boot/cdboot")
+	} else {
+		b.logger.Warn("BIOS boot file not found - ISO will not be BIOS bootable")
+	}
+
+	// Build makefs command arguments
 	// -t cd9660: ISO 9660 filesystem
 	// -o rockridge (R): Rock Ridge extensions (long filenames, permissions)
 	// -o L=<label>: Volume label (must be d-characters: alphanumeric only)
+	// -o B=<bootimage>: Boot image for BIOS boot
+	// -o no-emul-boot: No emulation boot mode
 	// -o no-trailing-padding: Omit padding for smaller file
-	// Note: bootimage options removed for now - FreeBSD base ISO doesn't need them
 	args := []string{
 		"-t", "cd9660",
 		"-o", "rockridge",
 		"-o", fmt.Sprintf("L=%s", label),
+	}
+
+	// Add boot image configuration if cdboot exists
+	if hasCdboot {
+		args = append(args,
+			"-o", "B=i386;boot/cdboot",  // Boot image specification
+			"-o", "no-emul-boot",         // No emulation mode
+		)
+		b.logger.Debug("Configured for BIOS boot with boot/cdboot")
+	}
+
+	// Add final options and paths
+	args = append(args,
 		"-o", "no-trailing-padding",
 		outputPath,
 		isoRoot,
-	}
+	)
 
 	if err := b.runCommand("makefs", args...); err != nil {
 		return fmt.Errorf("makefs failed: %w", err)
