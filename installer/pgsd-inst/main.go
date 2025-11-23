@@ -8,6 +8,7 @@ import (
     "strings"
 
     tea "github.com/charmbracelet/bubbletea"
+    "github.com/pgsdf/pgsdbuild/installer/internal/install"
 )
 
 // Installation states
@@ -382,24 +383,21 @@ func (m *model) performInstallation() {
     m.addLog(fmt.Sprintf("Image: %s", image.ID))
     m.addLog(fmt.Sprintf("Target disk: %s", disk.Device))
 
-    // Installation steps (simulated for prototype)
-    steps := []string{
-        "Partitioning disk...",
-        "Creating EFI system partition...",
-        "Creating ZFS partition...",
-        "Creating ZFS pool...",
-        "Extracting root filesystem...",
-        "Installing bootloader...",
-        "Finalizing installation...",
+    // Perform the actual installation
+    cfg := install.Config{
+        ImagePath:  image.Path,
+        TargetDisk: disk.Device,
+        ZpoolName:  "pgsd", // Default pool name
+        LogFunc:    m.addLog,
     }
 
-    for _, step := range steps {
-        m.addLog(step)
-        // In real implementation, this would call actual installation functions
-        // time.Sleep(500 * time.Millisecond) // Simulate work
+    if err := install.Install(cfg); err != nil {
+        m.addLog(fmt.Sprintf("Installation failed: %v", err))
+        m.err = err
+        m.state = stateError
+        return
     }
 
-    m.addLog("Installation complete!")
     m.state = stateComplete
 }
 
