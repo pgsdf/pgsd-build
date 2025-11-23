@@ -482,6 +482,32 @@ func (b *Builder) createISOWithTool(tool, toolPath, outputPath, isoRoot, label s
 
 // createISOWithMakefs creates an ISO using FreeBSD's makefs utility
 func (b *Builder) createISOWithMakefs(toolPath, outputPath, isoRoot, label string, hasCdboot bool) error {
+	// Verify boot files exist in isoRoot before calling makefs
+	if hasCdboot {
+		bootPath := filepath.Join(isoRoot, "boot/cdboot")
+		if stat, err := os.Stat(bootPath); err != nil {
+			b.logger.Error("Boot file check failed: %v", err)
+			b.logger.Error("Expected boot file at: %s", bootPath)
+			return fmt.Errorf("boot file not found at %s: %w", bootPath, err)
+		} else {
+			b.logger.Debug("Verified boot file exists: %s (size: %d bytes)", bootPath, stat.Size())
+		}
+
+		// List contents of boot directory for debugging
+		bootDir := filepath.Join(isoRoot, "boot")
+		if entries, err := os.ReadDir(bootDir); err == nil {
+			b.logger.Debug("Contents of boot directory:")
+			for _, entry := range entries {
+				info, _ := entry.Info()
+				if info != nil {
+					b.logger.Debug("  - %s (%d bytes)", entry.Name(), info.Size())
+				} else {
+					b.logger.Debug("  - %s", entry.Name())
+				}
+			}
+		}
+	}
+
 	// Build makefs command arguments
 	// -t cd9660: ISO 9660 filesystem
 	// -o rockridge (R): Rock Ridge extensions (long filenames, permissions)
@@ -513,6 +539,7 @@ func (b *Builder) createISOWithMakefs(toolPath, outputPath, isoRoot, label strin
 		isoRoot,
 	)
 
+	b.logger.Debug("Calling makefs with isoRoot: %s", isoRoot)
 	return b.runCommand(toolPath, args...)
 }
 
