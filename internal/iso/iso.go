@@ -532,15 +532,36 @@ func (b *Builder) createISOWithMakefs(toolPath, outputPath, isoRoot, label strin
 		b.logger.Info("Creating non-bootable ISO (no boot files available)")
 	}
 
+	// makefs needs to run from the isoRoot directory so it can find boot/cdboot
+	// The -B option expects paths relative to the working directory
+	// So we:
+	//   1. Change to isoRoot directory
+	//   2. Use "." as the source directory (current dir = isoRoot)
+	//   3. Make outputPath relative to isoRoot or absolute
+
+	// Ensure outputPath is absolute or relative to isoRoot
+	finalOutputPath := outputPath
+	if !filepath.IsAbs(outputPath) {
+		// outputPath is relative to current dir, need to make it relative to isoRoot
+		// or convert to absolute
+		absOutput, err := filepath.Abs(outputPath)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path for output: %w", err)
+		}
+		finalOutputPath = absOutput
+	}
+
 	// Add final options and paths
 	args = append(args,
 		"-o", "no-trailing-padding",
-		outputPath,
-		isoRoot,
+		finalOutputPath,  // Absolute path to output ISO
+		".",              // Source directory (current dir = isoRoot)
 	)
 
-	b.logger.Debug("Calling makefs with isoRoot: %s", isoRoot)
-	return b.runCommand(toolPath, args...)
+	b.logger.Debug("Calling makefs from isoRoot: %s", isoRoot)
+	b.logger.Debug("Output will be written to: %s", finalOutputPath)
+
+	return b.runCommandInDir(toolPath, isoRoot, args...)
 }
 
 // createISOWithXorriso creates an ISO using xorriso (modern Linux ISO tool)
@@ -678,6 +699,25 @@ func (b *Builder) runCommand(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 
 	b.logger.Debug("Running: %s %v", name, args)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("command failed: %w\nOutput: %s", err, string(output))
+	}
+
+	if len(output) > 0 {
+		b.logger.Debug("Command output: %s", string(output))
+	}
+
+	return nil
+}
+
+// runCommandInDir executes a command in a specific working directory
+func (b *Builder) runCommandInDir(name, dir string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+
+	b.logger.Debug("Running in %s: %s %v", dir, name, args)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
