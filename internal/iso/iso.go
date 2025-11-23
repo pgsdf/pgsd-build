@@ -129,39 +129,48 @@ func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) e
 	// Install FreeBSD packages into the ISO root filesystem
 	// Uses pkg with -r flag to install to alternate root
 
-	if len(cfg.PkgLists) == 0 {
-		b.logger.Warn("No package lists specified for ISO variant")
-		return nil
+	b.logger.Info("Installing FreeBSD base system for bootable ISO...")
+
+	// For a bootable ISO, we MUST install the FreeBSD base system
+	// This includes kernel, init, and core utilities
+	requiredPackages := []string{
+		"FreeBSD-kernel-generic", // Kernel
+		"FreeBSD-runtime",         // Init and core runtime
+		"FreeBSD-utilities",       // Base utilities
 	}
 
-	// TODO: Expand package lists from cfg.PkgLists to actual package names
-	// For now, we'll need to implement package list resolution
-	// This would involve reading package list files and expanding them
+	b.logger.Info("Installing %d required base packages", len(requiredPackages))
 
-	// Example for when package resolution is implemented:
-	// args := []string{"-r", isoRoot, "install", "-y"}
-	// for _, pkg := range resolvedPackages {
-	//     args = append(args, pkg)
-	// }
-	// if err := b.runCommand("pkg", args...); err != nil {
-	//     return fmt.Errorf("package installation failed: %w", err)
-	// }
+	// Use pkg to install packages into the ISO root
+	for _, pkg := range requiredPackages {
+		b.logger.Info("Installing: %s", pkg)
+		args := []string{
+			"-r", isoRoot,     // Root directory
+			"install", "-y",   // Install without confirmation
+			pkg,
+		}
+		if err := b.runCommand("pkg", args...); err != nil {
+			return fmt.Errorf("failed to install %s: %w", pkg, err)
+		}
+	}
 
+	// Create package list documentation
 	b.logger.Info("Package installation: %d package lists configured", len(cfg.PkgLists))
-	b.logger.Debug("Package lists: %v", cfg.PkgLists)
-
-	// Create a marker file documenting what should be installed
 	pkgList := filepath.Join(isoRoot, "PACKAGES.txt")
-	content := fmt.Sprintf("Bootenv ISO: %s\nPackage sets configured:\n", cfg.ID)
+	content := fmt.Sprintf("Bootenv ISO: %s\n\nBase system installed:\n", cfg.ID)
+	for _, pkg := range requiredPackages {
+		content += fmt.Sprintf("  - %s\n", pkg)
+	}
+	content += "\nPackage sets configured (not yet installed):\n"
 	for _, pkgSet := range cfg.PkgLists {
 		content += fmt.Sprintf("  - %s\n", pkgSet)
 	}
-	content += "\nNote: Package installation requires FreeBSD pkg and package list resolution.\n"
 
 	if err := util.WriteStringToFile(pkgList, content, 0644); err != nil {
 		return err
 	}
 
+	b.logger.Info("FreeBSD base system installed successfully")
 	return nil
 }
 
