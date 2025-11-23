@@ -1,0 +1,5 @@
+pgsdbuild
+artifacts/
+work/
+iso/
+pgsd-inst
