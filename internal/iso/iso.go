@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pgsdf/pgsdbuild/internal/build"
@@ -248,30 +249,33 @@ func (b *Builder) registerArcanTarget(isoRoot string) error {
 
 // assembleISO creates the final ISO image.
 func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath string) error {
-	// Create bootable ISO using makefs and mkisofs
+	// Create bootable ISO using makefs
 	// This requires FreeBSD with makefs utility
 
-	// Determine ISO label (max 32 characters for cd9660)
+	// Determine ISO label (max 32 characters, alphanumeric only for cd9660)
+	// makefs cd9660 requires "d-characters" (digits/letters) only in labels
 	label := cfg.ID
+	label = strings.ReplaceAll(label, "-", "")
+	label = strings.ReplaceAll(label, "_", "")
 	if len(label) > 32 {
 		label = label[:32]
 	}
+	// Ensure label is uppercase for consistency
+	label = strings.ToUpper(label)
 
-	// Create ISO filesystem using makefs
 	b.logger.Debug("Creating ISO filesystem with makefs...")
+	b.logger.Debug("ISO label: %s", label)
 
-	// makefs options for hybrid bootable ISO:
+	// makefs options for cd9660 ISO:
 	// -t cd9660: ISO 9660 filesystem
-	// -o rockridge: Rock Ridge extensions (long filenames, permissions)
-	// -o label=<label>: Volume label
-	// -o bootimage=i386:boot/cdboot: BIOS boot image
-	// -o no-emul-boot: No emulation boot
+	// -o rockridge (R): Rock Ridge extensions (long filenames, permissions)
+	// -o L=<label>: Volume label (must be d-characters: alphanumeric only)
+	// -o no-trailing-padding: Omit padding for smaller file
+	// Note: bootimage options removed for now - FreeBSD base ISO doesn't need them
 	args := []string{
 		"-t", "cd9660",
 		"-o", "rockridge",
-		"-o", fmt.Sprintf("label=%s", label),
-		"-o", "bootimage=i386:boot/cdboot",
-		"-o", "no-emul-boot",
+		"-o", fmt.Sprintf("L=%s", label),
 		"-o", "no-trailing-padding",
 		outputPath,
 		isoRoot,
