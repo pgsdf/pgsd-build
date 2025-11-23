@@ -1,0 +1,16 @@
+
+╔════════════════════════════════════════╗
+║   PGSD Installer Boot Environment     ║
+║   Minimal Mode                         ║
+╚════════════════════════════════════════╝
+
+This is a minimal installer environment.
+
+Login: pgsd / pgsd
+
+Arcan/Durden will start automatically.
+The installer will launch on startup.
+
+To start installer manually:
+  sudo pgsd-inst
+
