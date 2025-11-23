@@ -384,7 +384,7 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 	}
 
 	// Detect which ISO creation tool is available
-	isoTool := b.detectISOTool()
+	isoTool, isoToolPath := b.detectISOTool()
 	if isoTool == "" {
 		b.logger.Warn("No ISO creation tool found (tried: makefs, xorriso, genisoimage, mkisofs)")
 		b.logger.Warn("Creating tar archive instead - convert to ISO on a system with ISO tools")
@@ -401,10 +401,10 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 		return nil
 	}
 
-	b.logger.Info("Using ISO creation tool: %s", isoTool)
+	b.logger.Info("Using ISO creation tool: %s (%s)", isoTool, isoToolPath)
 
 	// Create ISO using the detected tool
-	if err := b.createISOWithTool(isoTool, outputPath, isoRoot, label, hasCdboot); err != nil {
+	if err := b.createISOWithTool(isoTool, isoToolPath, outputPath, isoRoot, label, hasCdboot); err != nil {
 		return fmt.Errorf("%s failed: %w", isoTool, err)
 	}
 
@@ -421,32 +421,53 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 }
 
 // detectISOTool detects which ISO creation tool is available on the system
-func (b *Builder) detectISOTool() string {
-	tools := []string{"makefs", "xorriso", "genisoimage", "mkisofs"}
-	for _, tool := range tools {
-		if _, err := exec.LookPath(tool); err == nil {
-			return tool
+// Returns the tool name and full path to the executable
+func (b *Builder) detectISOTool() (string, string) {
+	// Try common tools with explicit paths for FreeBSD/Linux systems
+	toolPaths := map[string][]string{
+		"makefs":      {"/usr/sbin/makefs", "/sbin/makefs"},
+		"xorriso":     {"/usr/bin/xorriso"},
+		"genisoimage": {"/usr/bin/genisoimage"},
+		"mkisofs":     {"/usr/bin/mkisofs"},
+	}
+
+	// Check explicit paths first (for FreeBSD where tools may not be in PATH)
+	for tool, paths := range toolPaths {
+		for _, path := range paths {
+			if _, err := os.Stat(path); err == nil {
+				b.logger.Debug("Found ISO tool at %s", path)
+				return tool, path
+			}
 		}
 	}
-	return ""
+
+	// Fall back to PATH search
+	tools := []string{"makefs", "xorriso", "genisoimage", "mkisofs"}
+	for _, tool := range tools {
+		if path, err := exec.LookPath(tool); err == nil {
+			return tool, path
+		}
+	}
+
+	return "", ""
 }
 
 // createISOWithTool creates an ISO using the specified tool
-func (b *Builder) createISOWithTool(tool, outputPath, isoRoot, label string, hasCdboot bool) error {
+func (b *Builder) createISOWithTool(tool, toolPath, outputPath, isoRoot, label string, hasCdboot bool) error {
 	switch tool {
 	case "makefs":
-		return b.createISOWithMakefs(outputPath, isoRoot, label, hasCdboot)
+		return b.createISOWithMakefs(toolPath, outputPath, isoRoot, label, hasCdboot)
 	case "xorriso":
-		return b.createISOWithXorriso(outputPath, isoRoot, label, hasCdboot)
+		return b.createISOWithXorriso(toolPath, outputPath, isoRoot, label, hasCdboot)
 	case "genisoimage", "mkisofs":
-		return b.createISOWithGenisoimage(tool, outputPath, isoRoot, label, hasCdboot)
+		return b.createISOWithGenisoimage(toolPath, outputPath, isoRoot, label, hasCdboot)
 	default:
 		return fmt.Errorf("unsupported ISO tool: %s", tool)
 	}
 }
 
 // createISOWithMakefs creates an ISO using FreeBSD's makefs utility
-func (b *Builder) createISOWithMakefs(outputPath, isoRoot, label string, hasCdboot bool) error {
+func (b *Builder) createISOWithMakefs(toolPath, outputPath, isoRoot, label string, hasCdboot bool) error {
 	// Build makefs command arguments
 	// -t cd9660: ISO 9660 filesystem
 	// -o rockridge (R): Rock Ridge extensions (long filenames, permissions)
@@ -478,11 +499,11 @@ func (b *Builder) createISOWithMakefs(outputPath, isoRoot, label string, hasCdbo
 		isoRoot,
 	)
 
-	return b.runCommand("makefs", args...)
+	return b.runCommand(toolPath, args...)
 }
 
 // createISOWithXorriso creates an ISO using xorriso (modern Linux ISO tool)
-func (b *Builder) createISOWithXorriso(outputPath, isoRoot, label string, hasCdboot bool) error {
+func (b *Builder) createISOWithXorriso(toolPath, outputPath, isoRoot, label string, hasCdboot bool) error {
 	// xorriso command arguments
 	// -as mkisofs: Compatibility mode
 	// -r: Rock Ridge extensions
@@ -512,11 +533,11 @@ func (b *Builder) createISOWithXorriso(outputPath, isoRoot, label string, hasCdb
 
 	args = append(args, isoRoot)
 
-	return b.runCommand("xorriso", args...)
+	return b.runCommand(toolPath, args...)
 }
 
 // createISOWithGenisoimage creates an ISO using genisoimage or mkisofs (legacy Linux tools)
-func (b *Builder) createISOWithGenisoimage(tool, outputPath, isoRoot, label string, hasCdboot bool) error {
+func (b *Builder) createISOWithGenisoimage(toolPath, outputPath, isoRoot, label string, hasCdboot bool) error {
 	// genisoimage/mkisofs command arguments
 	// -r: Rock Ridge extensions
 	// -V <label>: Volume label
@@ -541,7 +562,7 @@ func (b *Builder) createISOWithGenisoimage(tool, outputPath, isoRoot, label stri
 
 	args = append(args, isoRoot)
 
-	return b.runCommand(tool, args...)
+	return b.runCommand(toolPath, args...)
 }
 
 // createTarArchive creates a compressed tar archive of the ISO root directory
