@@ -2,6 +2,7 @@ package install
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,9 @@ func Install(cfg Config) error {
 	if log == nil {
 		log = func(s string) {} // No-op logger
 	}
+
+	// Normalize device path (remove /dev/ prefix if present)
+	cfg.TargetDisk = normalizeDevicePath(cfg.TargetDisk)
 
 	// Validate configuration
 	log("Validating installation configuration...")
@@ -227,11 +231,21 @@ func copyEFIPartition(efiImg, efiPart string) error {
 
 // installBootloader installs the FreeBSD bootloader
 func installBootloader(disk, poolName string) error {
-	// On FreeBSD:
-	// gpart bootcode -p /boot/boot1.efifat -i 1 disk
+	// Verify EFI partition exists first
+	efiPart := disk + "p1"
+	if err := verifyEFIPartition(efiPart); err != nil {
+		return fmt.Errorf("EFI partition verification failed: %w", err)
+	}
 
+	// Check if boot1.efifat exists
+	bootFile := "/boot/boot1.efifat"
+	if _, err := os.Stat(bootFile); err != nil {
+		return fmt.Errorf("bootloader file not found: %s\nThe system may be missing EFI boot files", bootFile)
+	}
+
+	// Install bootloader: gpart bootcode -p /boot/boot1.efifat -i 1 disk
 	cmd := exec.Command("gpart", "bootcode",
-		"-p", "/boot/boot1.efifat",
+		"-p", bootFile,
 		"-i", "1",
 		disk)
 
@@ -333,6 +347,38 @@ func readPipe(pipe interface{}) string {
 	if pipe == nil {
 		return ""
 	}
-	// This is a simplified version; in production we'd use io.ReadAll
+
+	// Type assert to io.ReadCloser
+	if rc, ok := pipe.(io.ReadCloser); ok {
+		defer rc.Close()
+		data, err := io.ReadAll(rc)
+		if err != nil {
+			return fmt.Sprintf("error reading pipe: %v", err)
+		}
+		return string(data)
+	}
+
 	return ""
+}
+
+// normalizeDevicePath removes /dev/ prefix from device paths
+func normalizeDevicePath(device string) string {
+	return strings.TrimPrefix(device, "/dev/")
+}
+
+// verifyEFIPartition checks if the EFI partition exists and is properly formatted
+func verifyEFIPartition(efiPart string) error {
+	// Check if the device exists
+	devPath := "/dev/" + efiPart
+	if _, err := os.Stat(devPath); err != nil {
+		return fmt.Errorf("EFI partition device not found: %s", devPath)
+	}
+
+	// Try to get partition info using gpart show
+	cmd := exec.Command("gpart", "show", "-p", efiPart)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to verify EFI partition: %w\nOutput: %s", err, output)
+	}
+
+	return nil
 }
