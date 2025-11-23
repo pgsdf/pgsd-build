@@ -1,7 +1,10 @@
 package iso
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -366,7 +369,7 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 	// Ensure label is uppercase for consistency
 	label = strings.ToUpper(label)
 
-	b.logger.Debug("Creating ISO filesystem with makefs...")
+	b.logger.Debug("Creating ISO filesystem...")
 	b.logger.Debug("ISO label: %s", label)
 
 	// Check if cdboot file exists before configuring boot
@@ -380,6 +383,70 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 		b.logger.Warn("To create bootable ISOs, this must run on FreeBSD with boot files installed")
 	}
 
+	// Detect which ISO creation tool is available
+	isoTool := b.detectISOTool()
+	if isoTool == "" {
+		b.logger.Warn("No ISO creation tool found (tried: makefs, xorriso, genisoimage, mkisofs)")
+		b.logger.Warn("Creating tar archive instead - convert to ISO on a system with ISO tools")
+
+		// Fallback: create a tar.gz archive of the ISO contents
+		tarPath := strings.TrimSuffix(outputPath, ".iso") + ".tar.gz"
+		if err := b.createTarArchive(tarPath, isoRoot); err != nil {
+			return fmt.Errorf("tar archive creation failed: %w", err)
+		}
+
+		b.logger.Info("Created tar archive: %s", tarPath)
+		b.logger.Info("To convert to ISO, use: genisoimage -r -V %s -o %s -graft-points <extracted-contents>", label, outputPath)
+
+		return nil
+	}
+
+	b.logger.Info("Using ISO creation tool: %s", isoTool)
+
+	// Create ISO using the detected tool
+	if err := b.createISOWithTool(isoTool, outputPath, isoRoot, label, hasCdboot); err != nil {
+		return fmt.Errorf("%s failed: %w", isoTool, err)
+	}
+
+	b.logger.Debug("Created ISO image: %s", outputPath)
+
+	// Verify the ISO was created
+	if info, err := os.Stat(outputPath); err != nil {
+		return fmt.Errorf("ISO verification failed: %w", err)
+	} else {
+		b.logger.Info("ISO size: %.2f MB", float64(info.Size())/(1024*1024))
+	}
+
+	return nil
+}
+
+// detectISOTool detects which ISO creation tool is available on the system
+func (b *Builder) detectISOTool() string {
+	tools := []string{"makefs", "xorriso", "genisoimage", "mkisofs"}
+	for _, tool := range tools {
+		if _, err := exec.LookPath(tool); err == nil {
+			return tool
+		}
+	}
+	return ""
+}
+
+// createISOWithTool creates an ISO using the specified tool
+func (b *Builder) createISOWithTool(tool, outputPath, isoRoot, label string, hasCdboot bool) error {
+	switch tool {
+	case "makefs":
+		return b.createISOWithMakefs(outputPath, isoRoot, label, hasCdboot)
+	case "xorriso":
+		return b.createISOWithXorriso(outputPath, isoRoot, label, hasCdboot)
+	case "genisoimage", "mkisofs":
+		return b.createISOWithGenisoimage(tool, outputPath, isoRoot, label, hasCdboot)
+	default:
+		return fmt.Errorf("unsupported ISO tool: %s", tool)
+	}
+}
+
+// createISOWithMakefs creates an ISO using FreeBSD's makefs utility
+func (b *Builder) createISOWithMakefs(outputPath, isoRoot, label string, hasCdboot bool) error {
 	// Build makefs command arguments
 	// -t cd9660: ISO 9660 filesystem
 	// -o rockridge (R): Rock Ridge extensions (long filenames, permissions)
@@ -396,8 +463,8 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 	// Add boot image configuration if cdboot exists
 	if hasCdboot {
 		args = append(args,
-			"-o", "B=i386;boot/cdboot",  // Boot image specification
-			"-o", "no-emul-boot",         // No emulation mode
+			"-o", "B=i386;boot/cdboot", // Boot image specification
+			"-o", "no-emul-boot",        // No emulation mode
 		)
 		b.logger.Info("Configured for BIOS boot with boot/cdboot")
 	} else {
@@ -411,20 +478,137 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 		isoRoot,
 	)
 
-	if err := b.runCommand("makefs", args...); err != nil {
-		return fmt.Errorf("makefs failed: %w", err)
+	return b.runCommand("makefs", args...)
+}
+
+// createISOWithXorriso creates an ISO using xorriso (modern Linux ISO tool)
+func (b *Builder) createISOWithXorriso(outputPath, isoRoot, label string, hasCdboot bool) error {
+	// xorriso command arguments
+	// -as mkisofs: Compatibility mode
+	// -r: Rock Ridge extensions
+	// -V <label>: Volume label
+	// -o <output>: Output file
+	args := []string{
+		"-as", "mkisofs",
+		"-r",                       // Rock Ridge
+		"-V", label,                // Volume label
+		"-o", outputPath,           // Output file
+		"-graft-points",            // Enable graft points for file mapping
 	}
 
-	b.logger.Debug("Created ISO image: %s", outputPath)
-
-	// Verify the ISO was created
-	if info, err := os.Stat(outputPath); err != nil {
-		return fmt.Errorf("ISO verification failed: %w", err)
+	if hasCdboot {
+		// Note: xorriso boot configuration is complex and may need adjustment
+		// for FreeBSD boot files. This creates a basic bootable ISO.
+		args = append(args,
+			"-b", "boot/cdboot",     // Boot image
+			"-no-emul-boot",         // No emulation
+			"-boot-load-size", "4",  // Load size
+			"-boot-info-table",      // Create boot info table
+		)
+		b.logger.Info("Configured for BIOS boot with boot/cdboot")
 	} else {
-		b.logger.Info("ISO size: %.2f MB", float64(info.Size())/(1024*1024))
+		b.logger.Info("Creating non-bootable ISO (no boot files available)")
 	}
 
-	return nil
+	args = append(args, isoRoot)
+
+	return b.runCommand("xorriso", args...)
+}
+
+// createISOWithGenisoimage creates an ISO using genisoimage or mkisofs (legacy Linux tools)
+func (b *Builder) createISOWithGenisoimage(tool, outputPath, isoRoot, label string, hasCdboot bool) error {
+	// genisoimage/mkisofs command arguments
+	// -r: Rock Ridge extensions
+	// -V <label>: Volume label
+	// -o <output>: Output file
+	args := []string{
+		"-r",                // Rock Ridge
+		"-V", label,         // Volume label
+		"-o", outputPath,    // Output file
+	}
+
+	if hasCdboot {
+		args = append(args,
+			"-b", "boot/cdboot",     // Boot image
+			"-no-emul-boot",         // No emulation
+			"-boot-load-size", "4",  // Load size
+			"-boot-info-table",      // Create boot info table
+		)
+		b.logger.Info("Configured for BIOS boot with boot/cdboot")
+	} else {
+		b.logger.Info("Creating non-bootable ISO (no boot files available)")
+	}
+
+	args = append(args, isoRoot)
+
+	return b.runCommand(tool, args...)
+}
+
+// createTarArchive creates a compressed tar archive of the ISO root directory
+func (b *Builder) createTarArchive(tarPath, isoRoot string) error {
+	b.logger.Debug("Creating tar archive: %s", tarPath)
+
+	// Create the output file
+	outFile, err := os.Create(tarPath)
+	if err != nil {
+		return fmt.Errorf("failed to create tar file: %w", err)
+	}
+	defer outFile.Close()
+
+	// Create gzip writer
+	gzWriter := gzip.NewWriter(outFile)
+	defer gzWriter.Close()
+
+	// Create tar writer
+	tarWriter := tar.NewWriter(gzWriter)
+	defer tarWriter.Close()
+
+	// Walk the ISO root directory and add all files
+	return filepath.Walk(isoRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Get the relative path for the tar header
+		relPath, err := filepath.Rel(isoRoot, path)
+		if err != nil {
+			return err
+		}
+
+		// Skip the root directory itself
+		if relPath == "." {
+			return nil
+		}
+
+		// Create tar header from file info
+		header, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return fmt.Errorf("failed to create tar header for %s: %w", path, err)
+		}
+
+		// Use the relative path as the name in the archive
+		header.Name = relPath
+
+		// Write the header
+		if err := tarWriter.WriteHeader(header); err != nil {
+			return fmt.Errorf("failed to write tar header for %s: %w", path, err)
+		}
+
+		// If it's a regular file, write its contents
+		if info.Mode().IsRegular() {
+			file, err := os.Open(path)
+			if err != nil {
+				return fmt.Errorf("failed to open file %s: %w", path, err)
+			}
+			defer file.Close()
+
+			if _, err := io.Copy(tarWriter, file); err != nil {
+				return fmt.Errorf("failed to write file %s to tar: %w", path, err)
+			}
+		}
+
+		return nil
+	})
 }
 
 // runCommand executes a command and returns an error if it fails
