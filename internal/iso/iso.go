@@ -646,8 +646,61 @@ func (b *Builder) addMBRBootCode(isoPath, isoRoot string) error {
 	if err != nil {
 		return fmt.Errorf("failed to write boot code: %w", err)
 	}
-
 	b.logger.Debug("Wrote %d bytes of MBR boot code to ISO", n)
+
+	// Get ISO file size for partition table
+	isoInfo, err := iso.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat ISO: %w", err)
+	}
+	isoSize := isoInfo.Size()
+	isoSectors := (isoSize + 511) / 512 // Round up to sector boundary
+
+	// Create MBR partition table for USB boot detection
+	// Partition table starts at byte 446 (0x1BE)
+	partitionTable := make([]byte, 64) // 4 partition entries * 16 bytes each
+
+	// First partition entry (bytes 0-15 of partition table)
+	// This tells BIOS where the bootable data is
+	partitionTable[0] = 0x80  // Bootable flag (0x80 = bootable, 0x00 = not bootable)
+	partitionTable[1] = 0x00  // Starting head
+	partitionTable[2] = 0x01  // Starting sector
+	partitionTable[3] = 0x00  // Starting cylinder
+	partitionTable[4] = 0x00  // Partition type (0x00 = empty, but works for ISO)
+	partitionTable[5] = 0xFE  // Ending head
+	partitionTable[6] = 0xFF  // Ending sector
+	partitionTable[7] = 0xFF  // Ending cylinder
+
+	// LBA of first sector (little-endian, 4 bytes)
+	partitionTable[8] = 0x00
+	partitionTable[9] = 0x00
+	partitionTable[10] = 0x00
+	partitionTable[11] = 0x00
+
+	// Number of sectors (little-endian, 4 bytes)
+	// Limit to 32-bit max for compatibility
+	sectors := uint32(isoSectors)
+	if isoSectors > 0xFFFFFFFF {
+		sectors = 0xFFFFFFFF
+	}
+	partitionTable[12] = byte(sectors & 0xFF)
+	partitionTable[13] = byte((sectors >> 8) & 0xFF)
+	partitionTable[14] = byte((sectors >> 16) & 0xFF)
+	partitionTable[15] = byte((sectors >> 24) & 0xFF)
+
+	// Write partition table at offset 446 (0x1BE)
+	if _, err := iso.WriteAt(partitionTable, 446); err != nil {
+		return fmt.Errorf("failed to write partition table: %w", err)
+	}
+	b.logger.Debug("Created MBR partition table (ISO size: %d MB, sectors: %d)", isoSize/(1024*1024), sectors)
+
+	// Write MBR boot signature at bytes 510-511 (0x55 0xAA)
+	bootSig := []byte{0x55, 0xAA}
+	if _, err := iso.WriteAt(bootSig, 510); err != nil {
+		return fmt.Errorf("failed to write boot signature: %w", err)
+	}
+	b.logger.Debug("Wrote MBR boot signature (0x55AA)")
+
 	return nil
 }
 
