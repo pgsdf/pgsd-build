@@ -1,0 +1,23 @@
+# Network configuration for PGSD systems
+
+# Hostname (override in /etc/rc.conf if needed)
+# hostname="pgsd-desktop"
+
+# Network interfaces
+# Configure as needed, example for WiFi:
+# wlans_iwm0="wlan0"
+# ifconfig_wlan0="WPA DHCP"
+
+# WPA supplicant for wireless
+wpa_supplicant_enable="YES"
+# wpa_supplicant_flags="-i wlan0"  # Uncomment and adjust interface
+
+# Enable DHCP client
+dhclient_enable="YES"
+
+# IPv6
+ipv6_activate_all_interfaces="YES"
+ipv6_enable="YES"
+
+# DNS configuration is handled by resolvconf
+# See /etc/resolv.conf.d/ for customization

@@ -1,0 +1,24 @@
+# Essential system services for PGSD
+
+# SSH daemon
+sshd_enable="YES"
+
+# NTP time synchronization
+ntpd_enable="YES"
+ntpd_sync_on_start="YES"
+
+# System message bus (required for many desktop services)
+dbus_enable="YES"
+
+# Console configuration
+keymap="us.kbd"              # Default US keyboard
+keyrate="fast"               # Key repeat rate
+keychange="NO"               # Disable keymap changes at console
+scrnmap="NO"                 # Screen map
+font8x16="NO"                # Console font
+font8x14="NO"
+font8x8="NO"
+
+# Enable moused for console mouse support
+moused_enable="YES"
+moused_flags="-3"            # Enable 3-button mouse emulation
