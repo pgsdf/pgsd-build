@@ -1,0 +1,23 @@
+#!/bin/sh
+#
+# PGSD Installer Launcher
+# Quick launcher script for the PGSD installer
+#
+# Usage: pgsd-install
+
+# Check if running as root
+if [ "$(id -u)" != "0" ]; then
+    echo "PGSD Installer requires root privileges."
+    echo "Please run with sudo:"
+    echo "  sudo pgsd-install"
+    exit 1
+fi
+
+# Check if installer exists
+if [ ! -x /usr/local/bin/pgsd-inst ]; then
+    echo "Error: PGSD installer not found at /usr/local/bin/pgsd-inst"
+    exit 1
+fi
+
+# Launch installer
+exec /usr/local/bin/pgsd-inst "$@"

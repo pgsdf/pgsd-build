@@ -1,0 +1,83 @@
+#!/bin/sh
+#
+# PGSD Welcome Script
+# Displays welcome information for the live environment
+#
+
+cat <<'EOF'
+
+╔══════════════════════════════════════════════════════════════════════╗
+║                                                                      ║
+║                    Welcome to PGSD Live Environment!                 ║
+║                                                                      ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+This is a live boot environment for installing PGSD on your system.
+
+QUICK START:
+-----------
+  To install PGSD on your hard drive:
+    $ sudo pgsd-install
+
+  Or run the installer directly:
+    $ sudo pgsd-inst
+
+NETWORK SETUP:
+-------------
+  WiFi configuration:
+    $ sudo wpa_passphrase "SSID" "password" >> /etc/wpa_supplicant.conf
+    $ sudo service wpa_supplicant restart
+    $ sudo service dhcpcd restart
+
+  Wired (automatic DHCP):
+    Should work automatically via dhcpcd
+
+SYSTEM INFORMATION:
+------------------
+  • OS: FreeBSD with PGSD customizations
+  • Display Server: Arcan
+  • Window Manager: Durden
+  • Default Shell: ZSH
+
+USEFUL COMMANDS:
+---------------
+  pgsd-install        Launch the installer (requires root)
+  pgsd-inst           Direct installer binary (requires root)
+  beadm list          List available images (after installation)
+  diskinfo -v         Show disk information
+  gpart show          Display partition table
+  zpool status        Show ZFS pool status (after installation)
+
+KEYBOARD SHORTCUTS (Durden):
+---------------------------
+  Meta + Enter        Open terminal (foot)
+  Meta + D            Application launcher
+  Meta + Shift + Q    Close window
+  Meta + F            Toggle fullscreen
+  Meta + Arrow Keys   Switch workspaces
+
+  (Meta key is typically the Windows/Super key)
+
+GETTING HELP:
+------------
+  • Documentation: /usr/local/share/pgsd/README.txt
+  • Arcan Documentation: https://arcan-fe.com
+  • FreeBSD Handbook: https://docs.freebsd.org
+
+TROUBLESHOOTING:
+---------------
+  If Arcan/Durden doesn't start:
+    $ startx           (alternative, if X11 is available)
+    $ arcan durden     (manual Arcan start)
+
+  Check system logs:
+    $ dmesg | less
+    $ tail -f /var/log/messages
+
+  Network issues:
+    $ ifconfig         (list network interfaces)
+    $ service netif restart
+
+───────────────────────────────────────────────────────────────────────
+
+EOF
