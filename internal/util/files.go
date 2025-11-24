@@ -20,6 +20,7 @@ func CopyFile(src, dst string, mode os.FileMode) error {
 }
 
 // CopyDir recursively copies a directory from src to dst.
+// It handles symlinks by copying them as symlinks and gracefully skips broken symlinks.
 func CopyDir(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -38,7 +39,27 @@ func CopyDir(src, dst string) error {
 			return os.MkdirAll(dstPath, info.Mode())
 		}
 
-		// Copy file
+		// Handle symlinks specially
+		if info.Mode()&os.ModeSymlink != 0 {
+			// Read the symlink target
+			linkTarget, err := os.Readlink(path)
+			if err != nil {
+				// If we can't read the symlink, skip it
+				return nil
+			}
+
+			// Create the symlink at the destination
+			// Remove existing file/link if present
+			os.Remove(dstPath)
+			if err := os.Symlink(linkTarget, dstPath); err != nil {
+				// If symlink creation fails, just skip it
+				// This can happen with broken symlinks
+				return nil
+			}
+			return nil
+		}
+
+		// Copy regular file
 		return CopyFile(path, dstPath, info.Mode())
 	})
 }
