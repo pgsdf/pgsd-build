@@ -266,10 +266,10 @@ func (b *Builder) installBootInfrastructure(isoRoot string) error {
 
 	// Required boot files for BIOS boot (relative paths from FREEBSD_ROOT)
 	biosBootFiles := []string{
-		"boot/cdboot",      // CD/DVD boot loader
-		"boot/isoboot",     // Hybrid ISO boot (for USB boot support)
-		"boot/loader",      // Boot loader
-		"boot/loader.rc",   // Loader configuration
+		"boot/cdboot",               // CD/DVD boot loader (required for El Torito)
+		"boot/isoboot",              // Hybrid ISO boot (required for USB boot support)
+		"boot/loader",               // Boot loader (stage 3)
+		"boot/loader.rc",            // Loader configuration
 		"boot/defaults/loader.conf", // Default loader settings
 	}
 
@@ -329,9 +329,9 @@ func (b *Builder) installBootInfrastructure(isoRoot string) error {
 	// Copy essential kernel modules
 	b.logger.Debug("Copying kernel modules...")
 	modules := []string{
-		"zfs.ko",       // ZFS filesystem
+		"zfs.ko",        // ZFS filesystem
 		"geom_label.ko", // GEOM labels
-		"ahci.ko",      // AHCI disk controller
+		"ahci.ko",       // AHCI disk controller
 	}
 
 	for _, module := range modules {
@@ -565,7 +565,7 @@ func (b *Builder) createISOWithMakefs(toolPath, outputPath, isoRoot, label strin
 	if hasCdboot {
 		args = append(args,
 			"-o", "B=i386;boot/cdboot", // Boot image specification
-			"-o", "no-emul-boot",        // No emulation mode
+			"-o", "no-emul-boot", // No emulation mode
 		)
 		b.logger.Info("Configured for BIOS boot with boot/cdboot")
 	} else {
@@ -594,8 +594,8 @@ func (b *Builder) createISOWithMakefs(toolPath, outputPath, isoRoot, label strin
 	// Add final options and paths
 	args = append(args,
 		"-o", "no-trailing-padding",
-		finalOutputPath,  // Absolute path to output ISO
-		".",              // Source directory (current dir = isoRoot)
+		finalOutputPath, // Absolute path to output ISO
+		".",             // Source directory (current dir = isoRoot)
 	)
 
 	b.logger.Debug("Calling makefs from isoRoot: %s", isoRoot)
@@ -683,14 +683,14 @@ func (b *Builder) addMBRBootCode(isoPath, isoRoot string) error {
 
 	// First partition entry (bytes 0-15 of partition table)
 	// This tells BIOS where the bootable data is
-	partitionTable[0] = 0x80  // Bootable flag (0x80 = bootable, 0x00 = not bootable)
-	partitionTable[1] = 0x00  // Starting head
-	partitionTable[2] = 0x01  // Starting sector
-	partitionTable[3] = 0x00  // Starting cylinder
-	partitionTable[4] = 0xcd  // Partition type (0xcd = ISO 9660 filesystem)
-	partitionTable[5] = 0xFE  // Ending head
-	partitionTable[6] = 0xFF  // Ending sector
-	partitionTable[7] = 0xFF  // Ending cylinder
+	partitionTable[0] = 0x80 // Bootable flag (0x80 = bootable, 0x00 = not bootable)
+	partitionTable[1] = 0x00 // Starting head
+	partitionTable[2] = 0x01 // Starting sector
+	partitionTable[3] = 0x00 // Starting cylinder
+	partitionTable[4] = 0xcd // Partition type (0xcd = ISO 9660 filesystem)
+	partitionTable[5] = 0xFE // Ending head
+	partitionTable[6] = 0xFF // Ending sector
+	partitionTable[7] = 0xFF // Ending cylinder
 
 	// LBA of first sector (little-endian, 4 bytes)
 	partitionTable[8] = 0x00
@@ -727,29 +727,65 @@ func (b *Builder) addMBRBootCode(isoPath, isoRoot string) error {
 
 // createISOWithXorriso creates an ISO using xorriso (modern Linux ISO tool)
 func (b *Builder) createISOWithXorriso(toolPath, outputPath, isoRoot, label string, hasCdboot bool) error {
-	// xorriso command arguments
+	// xorriso command arguments for creating a hybrid BIOS+UEFI bootable ISO
+	// This creates an ISO that boots from CD/DVD/USB in both BIOS and UEFI modes
 	// -as mkisofs: Compatibility mode
 	// -r: Rock Ridge extensions
+	// -J: Joliet extensions (Windows compatibility)
+	// -joliet-long: Long filenames in Joliet
 	// -V <label>: Volume label
 	// -o <output>: Output file
 	args := []string{
 		"-as", "mkisofs",
-		"-r",                       // Rock Ridge
-		"-V", label,                // Volume label
-		"-o", outputPath,           // Output file
-		"-graft-points",            // Enable graft points for file mapping
+		"-r",            // Rock Ridge
+		"-J",            // Joliet
+		"-joliet-long",  // Long filenames
+		"-cache-inodes", // Optimize hard links
+		"-V", label,     // Volume label
+		"-o", outputPath, // Output file
 	}
 
 	if hasCdboot {
-		// Note: xorriso boot configuration is complex and may need adjustment
-		// for FreeBSD boot files. This creates a basic bootable ISO.
+		// Check if EFI bootloader exists for UEFI support
+		efiBootPath := filepath.Join(isoRoot, "EFI/BOOT/BOOTX64.EFI")
+		hasEFI := false
+		if stat, err := os.Stat(efiBootPath); err == nil && !stat.IsDir() {
+			hasEFI = true
+		}
+
+		// Check if isoboot exists for hybrid USB boot
+		isobootPath := filepath.Join(isoRoot, "boot/isoboot")
+		hasIsoboot := false
+		if stat, err := os.Stat(isobootPath); err == nil && !stat.IsDir() {
+			hasIsoboot = true
+		}
+
+		// Add hybrid MBR boot code for USB boot (BIOS mode)
+		if hasIsoboot {
+			args = append(args, "-isohybrid-mbr", filepath.Join(isoRoot, "boot/isoboot"))
+			b.logger.Info("Configured for hybrid USB boot (BIOS mode)")
+		}
+
+		// Add BIOS boot configuration (CD/DVD and USB)
 		args = append(args,
-			"-b", "boot/cdboot",     // Boot image
-			"-no-emul-boot",         // No emulation
-			"-boot-load-size", "4",  // Load size
-			"-boot-info-table",      // Create boot info table
+			"-b", "boot/cdboot", // Boot image
+			"-c", "boot.catalog", // Boot catalog
+			"-boot-load-size", "4", // Load size
+			"-boot-info-table", // Create boot info table
+			"-no-emul-boot",    // No emulation
 		)
 		b.logger.Info("Configured for BIOS boot with boot/cdboot")
+
+		// Add UEFI boot configuration
+		if hasEFI {
+			args = append(args,
+				"-eltorito-alt-boot",         // Alternative boot entry
+				"-e", "EFI/BOOT/BOOTX64.EFI", // EFI boot loader
+				"-no-emul-boot",         // No emulation
+				"-isohybrid-gpt-basdat", // GPT partition for hybrid boot
+			)
+			b.logger.Info("Configured for UEFI boot with EFI/BOOT/BOOTX64.EFI")
+		}
 	} else {
 		b.logger.Info("Creating non-bootable ISO (no boot files available)")
 	}
@@ -766,17 +802,17 @@ func (b *Builder) createISOWithGenisoimage(toolPath, outputPath, isoRoot, label 
 	// -V <label>: Volume label
 	// -o <output>: Output file
 	args := []string{
-		"-r",                // Rock Ridge
-		"-V", label,         // Volume label
-		"-o", outputPath,    // Output file
+		"-r",        // Rock Ridge
+		"-V", label, // Volume label
+		"-o", outputPath, // Output file
 	}
 
 	if hasCdboot {
 		args = append(args,
-			"-b", "boot/cdboot",     // Boot image
-			"-no-emul-boot",         // No emulation
-			"-boot-load-size", "4",  // Load size
-			"-boot-info-table",      // Create boot info table
+			"-b", "boot/cdboot", // Boot image
+			"-no-emul-boot",        // No emulation
+			"-boot-load-size", "4", // Load size
+			"-boot-info-table", // Create boot info table
 		)
 		b.logger.Info("Configured for BIOS boot with boot/cdboot")
 	} else {
