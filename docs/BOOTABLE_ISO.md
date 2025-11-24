@@ -48,39 +48,11 @@ dd if=pgsd-bootenv-arcan.iso of=/dev/rdisk2 bs=1m
 
 **⚠️ WARNING**: Replace `/dev/da0`, `/dev/sdb`, or `/dev/rdisk2` with your actual USB drive device. Using the wrong device will destroy data!
 
-### Expected Warning: GPT Header
+### GPT Table Structure
 
-When using `dd` to write the ISO to USB media, you may see this warning:
+The ISO images include a complete hybrid GPT/MBR boot structure with both primary and secondary GPT tables. This ensures compatibility with both BIOS and UEFI boot modes.
 
-```
-GEOM: da0: the secondary GPT header is not in the last LBA.
-```
-
-**This is expected behavior and does not prevent booting!**
-
-#### Why This Happens
-
-The ISO image has a GPT table with a backup header at the end of the ISO file. When you write the ISO to a larger USB drive using `dd`, the backup header is no longer at the end of the physical disk, but rather at the end of the ISO image within the disk.
-
-#### Is This a Problem?
-
-No! The ISO will still boot correctly in both BIOS and UEFI modes. The primary GPT header at the beginning of the disk is sufficient for booting.
-
-#### How to Fix (Optional)
-
-If you want to eliminate the warning, you can recover the GPT table after writing:
-
-**On FreeBSD:**
-```bash
-gpart recover da0
-```
-
-**On Linux:**
-```bash
-sgdisk -e /dev/sdb
-```
-
-This moves the backup GPT header to the actual end of the disk.
+**Note:** Older versions of the build system only wrote the primary GPT table, which caused GEOM warnings about corrupt or invalid secondary GPT tables. This has been fixed - both primary and secondary GPT tables are now written correctly.
 
 ### Alternative: Using Etcher or Rufus
 
