@@ -18,15 +18,24 @@ import (
 
 // Builder builds bootable ISO images.
 type Builder struct {
-	config *build.Config
-	logger *util.Logger
+	config      *build.Config
+	logger      *util.Logger
+	freebsdRoot string // Root directory for FreeBSD files (for cross-building)
 }
 
 // NewBuilder creates a new ISO Builder.
 func NewBuilder(cfg *build.Config, logger *util.Logger) *Builder {
+	// Support cross-building from non-FreeBSD systems
+	// Set FREEBSD_ROOT env var to point to extracted FreeBSD distribution
+	freebsdRoot := os.Getenv("FREEBSD_ROOT")
+	if freebsdRoot == "" {
+		freebsdRoot = "/" // Default to system root for native builds
+	}
+
 	return &Builder{
-		config: cfg,
-		logger: logger,
+		config:      cfg,
+		logger:      logger,
+		freebsdRoot: freebsdRoot,
 	}
 }
 
@@ -128,35 +137,36 @@ func (b *Builder) buildISOFilesystem(cfg config.VariantConfig, isoRoot string) e
 func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) error {
 	b.logger.Info("Installing FreeBSD base system for bootable ISO...")
 
-	// For bootable ISOs, copy essential FreeBSD base system from host
-	// This is simpler and more reliable than using pkg for base system
+	// For bootable ISOs, copy essential FreeBSD base system from FREEBSD_ROOT
+	// This supports both native FreeBSD builds and cross-building from Linux
 	essentialDirs := []string{
-		"/bin",
-		"/sbin",
-		"/lib",
-		"/libexec",
-		"/usr/bin",
-		"/usr/sbin",
-		"/usr/lib",
-		"/usr/libexec",
-		"/rescue",
+		"bin",
+		"sbin",
+		"lib",
+		"libexec",
+		"usr/bin",
+		"usr/sbin",
+		"usr/lib",
+		"usr/libexec",
+		"rescue",
 	}
 
-	b.logger.Info("Copying essential base system directories from host...")
+	b.logger.Info("Copying essential base system directories from %s...", b.freebsdRoot)
 	for _, dir := range essentialDirs {
-		destDir := filepath.Join(isoRoot, dir[1:]) // Remove leading /
+		srcDir := filepath.Join(b.freebsdRoot, dir)
+		destDir := filepath.Join(isoRoot, dir)
 
-		if _, err := os.Stat(dir); err != nil {
+		if _, err := os.Stat(srcDir); err != nil {
 			if os.IsNotExist(err) {
-				b.logger.Warn("Host directory not found (skipping): %s", dir)
+				b.logger.Warn("Source directory not found (skipping): %s", srcDir)
 				continue
 			}
-			return fmt.Errorf("failed to access %s: %w", dir, err)
+			return fmt.Errorf("failed to access %s: %w", srcDir, err)
 		}
 
-		b.logger.Debug("Copying: %s -> %s", dir, destDir)
-		if err := util.CopyDir(dir, destDir); err != nil {
-			b.logger.Warn("Failed to copy %s: %v (continuing)", dir, err)
+		b.logger.Debug("Copying: %s -> %s", srcDir, destDir)
+		if err := util.CopyDir(srcDir, destDir); err != nil {
+			b.logger.Warn("Failed to copy %s: %v (continuing)", srcDir, err)
 			// Don't fail build, continue with other dirs
 		}
 	}
@@ -249,22 +259,24 @@ func (b *Builder) copySystemImages(cfg config.VariantConfig, isoRoot string) err
 
 // installBootInfrastructure installs FreeBSD boot files needed for bootable ISO
 func (b *Builder) installBootInfrastructure(isoRoot string) error {
-	// Copy essential boot files from the running FreeBSD system
+	// Copy essential boot files from FREEBSD_ROOT
 	// This makes the ISO bootable in both BIOS and UEFI modes
 
 	bootDir := filepath.Join(isoRoot, "boot")
 
-	// Required boot files for BIOS boot
+	// Required boot files for BIOS boot (relative paths from FREEBSD_ROOT)
 	biosBootFiles := []string{
-		"/boot/cdboot",      // CD/DVD boot loader
-		"/boot/isoboot",     // Hybrid ISO boot (for USB boot support)
-		"/boot/loader",      // Boot loader
-		"/boot/loader.rc",   // Loader configuration
-		"/boot/defaults/loader.conf", // Default loader settings
+		"boot/cdboot",      // CD/DVD boot loader
+		"boot/isoboot",     // Hybrid ISO boot (for USB boot support)
+		"boot/loader",      // Boot loader
+		"boot/loader.rc",   // Loader configuration
+		"boot/defaults/loader.conf", // Default loader settings
 	}
 
-	b.logger.Debug("Copying BIOS boot files...")
-	for _, srcPath := range biosBootFiles {
+	b.logger.Debug("Copying BIOS boot files from %s...", b.freebsdRoot)
+	for _, relPath := range biosBootFiles {
+		srcPath := filepath.Join(b.freebsdRoot, relPath)
+
 		if _, err := os.Stat(srcPath); err != nil {
 			if os.IsNotExist(err) {
 				b.logger.Warn("Boot file not found (skipping): %s", srcPath)
@@ -274,8 +286,8 @@ func (b *Builder) installBootInfrastructure(isoRoot string) error {
 		}
 
 		// Determine destination path
-		relPath := strings.TrimPrefix(srcPath, "/boot/")
-		dstPath := filepath.Join(bootDir, relPath)
+		bootRelPath := strings.TrimPrefix(relPath, "boot/")
+		dstPath := filepath.Join(bootDir, bootRelPath)
 
 		// Ensure destination directory exists
 		dstDir := filepath.Dir(dstPath)
@@ -289,20 +301,29 @@ func (b *Builder) installBootInfrastructure(isoRoot string) error {
 		}
 	}
 
-	// Copy kernel (required for boot)
-	b.logger.Debug("Copying FreeBSD kernel...")
-	kernelSrc := "/boot/kernel/kernel"
-	if _, err := os.Stat(kernelSrc); err == nil {
-		kernelDir := filepath.Join(bootDir, "kernel")
-		if err := util.EnsureDir(kernelDir); err != nil {
-			return err
-		}
-		kernelDst := filepath.Join(kernelDir, "kernel")
-		if err := util.CopyFile(kernelSrc, kernelDst, 0755); err != nil {
-			return fmt.Errorf("failed to copy kernel: %w", err)
-		}
+	// Copy kernel (REQUIRED for boot)
+	b.logger.Info("Copying FreeBSD kernel (required for boot)...")
+	kernelSrc := filepath.Join(b.freebsdRoot, "boot/kernel/kernel")
+	if _, err := os.Stat(kernelSrc); err != nil {
+		return fmt.Errorf("kernel not found at %s - cannot create bootable ISO: %w", kernelSrc, err)
+	}
+
+	kernelDir := filepath.Join(bootDir, "kernel")
+	if err := util.EnsureDir(kernelDir); err != nil {
+		return fmt.Errorf("failed to create kernel directory: %w", err)
+	}
+
+	kernelDst := filepath.Join(kernelDir, "kernel")
+	b.logger.Debug("Copying kernel: %s -> %s", kernelSrc, kernelDst)
+	if err := util.CopyFile(kernelSrc, kernelDst, 0755); err != nil {
+		return fmt.Errorf("failed to copy kernel: %w", err)
+	}
+
+	// Verify kernel was copied
+	if info, err := os.Stat(kernelDst); err != nil {
+		return fmt.Errorf("kernel copy verification failed: %w", err)
 	} else {
-		b.logger.Warn("Kernel not found at %s - ISO may not boot", kernelSrc)
+		b.logger.Info("Kernel copied successfully (%d bytes)", info.Size())
 	}
 
 	// Copy essential kernel modules
@@ -314,7 +335,7 @@ func (b *Builder) installBootInfrastructure(isoRoot string) error {
 	}
 
 	for _, module := range modules {
-		srcPath := filepath.Join("/boot/kernel", module)
+		srcPath := filepath.Join(b.freebsdRoot, "boot/kernel", module)
 		if _, err := os.Stat(srcPath); err == nil {
 			dstPath := filepath.Join(bootDir, "kernel", module)
 			if err := util.CopyFile(srcPath, dstPath, 0644); err != nil {
@@ -331,7 +352,7 @@ func (b *Builder) installBootInfrastructure(isoRoot string) error {
 	}
 
 	// Copy EFI boot loader if available
-	efiBootSrc := "/boot/boot1.efi"
+	efiBootSrc := filepath.Join(b.freebsdRoot, "boot/boot1.efi")
 	if _, err := os.Stat(efiBootSrc); err == nil {
 		efiBootDst := filepath.Join(efiDir, "BOOTX64.EFI")
 		if err := util.CopyFile(efiBootSrc, efiBootDst, 0644); err != nil {
@@ -604,9 +625,9 @@ func (b *Builder) addMBRBootCode(isoPath, isoRoot string) error {
 	// FreeBSD uses /boot/isoboot for hybrid ISOs
 	// isoboot contains the MBR boot code that allows USB boot
 	isobootPaths := []string{
-		"/boot/isoboot",                      // Preferred for hybrid ISOs
-		filepath.Join(isoRoot, "boot/isoboot"), // From ISO root
-		"/boot/cdboot",                       // Fallback
+		filepath.Join(b.freebsdRoot, "boot/isoboot"), // From FREEBSD_ROOT
+		filepath.Join(isoRoot, "boot/isoboot"),       // From ISO root
+		filepath.Join(b.freebsdRoot, "boot/cdboot"),  // Fallback
 	}
 
 	var isobootPath string

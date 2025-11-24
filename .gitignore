@@ -4,3 +4,5 @@ work/
 /iso/
 /pgsd-inst
 bin/
+freebsd-dist/
+*.log
