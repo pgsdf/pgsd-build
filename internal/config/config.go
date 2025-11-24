@@ -9,12 +9,22 @@ import (
 )
 
 type ImageConfig struct {
-	ID        string
-	Version   string
-	ZpoolName string
-	RootDS    string
-	PkgLists  []string
-	Overlays  []string
+	ID              string
+	Version         string
+	ZpoolName       string
+	RootDS          string
+	PkgLists        []string
+	Overlays        []string
+	DatasetOverlays []DatasetOverlay
+}
+
+// DatasetOverlay represents a ZFS dataset snapshot to receive into the image.
+type DatasetOverlay struct {
+	Name       string
+	Source     string
+	Mountpoint string
+	CanMount   string
+	Properties map[string]string
 }
 
 type VariantConfig struct {
@@ -51,12 +61,13 @@ func LoadImageConfig(path string) (*ImageConfig, error) {
 	tbl := ret.(*lua.LTable)
 
 	cfg := &ImageConfig{
-		ID:        getStringField(tbl, "id"),
-		Version:   getStringField(tbl, "version"),
-		ZpoolName: getStringField(tbl, "zpool_name"),
-		RootDS:    getStringField(tbl, "root_dataset"),
-		PkgLists:  getStringArrayField(tbl, "pkg_lists"),
-		Overlays:  getStringArrayField(tbl, "overlays"),
+		ID:              getStringField(tbl, "id"),
+		Version:         getStringField(tbl, "version"),
+		ZpoolName:       getStringField(tbl, "zpool_name"),
+		RootDS:          getStringField(tbl, "root_dataset"),
+		PkgLists:        getStringArrayField(tbl, "pkg_lists"),
+		Overlays:        getStringArrayField(tbl, "overlays"),
+		DatasetOverlays: getDatasetOverlays(tbl, "dataset_overlays"),
 	}
 
 	// Validate required fields
@@ -210,6 +221,42 @@ func getStringArrayField(tbl *lua.LTable, key string) []string {
 		if v.Type() == lua.LTString {
 			result = append(result, v.String())
 		}
+	})
+
+	return result
+}
+
+// getDatasetOverlays extracts dataset_overlays from Lua table
+func getDatasetOverlays(tbl *lua.LTable, key string) []DatasetOverlay {
+	lv := tbl.RawGetString(key)
+	if lv.Type() != lua.LTTable {
+		return nil
+	}
+
+	arr := lv.(*lua.LTable)
+	var result []DatasetOverlay
+
+	arr.ForEach(func(_, v lua.LValue) {
+		if v.Type() != lua.LTTable {
+			return
+		}
+		t := v.(*lua.LTable)
+
+		// Parse properties sub-table
+		props := map[string]string{}
+		if p := t.RawGetString("properties"); p.Type() == lua.LTTable {
+			p.(*lua.LTable).ForEach(func(k, v lua.LValue) {
+				props[k.String()] = v.String()
+			})
+		}
+
+		result = append(result, DatasetOverlay{
+			Name:       getStringField(t, "name"),
+			Source:     getStringField(t, "source"),
+			Mountpoint: getStringField(t, "mountpoint"),
+			CanMount:   getStringField(t, "canmount"),
+			Properties: props,
+		})
 	})
 
 	return result
