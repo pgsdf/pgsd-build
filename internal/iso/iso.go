@@ -159,21 +159,139 @@ func (b *Builder) buildISOFilesystem(cfg config.VariantConfig, isoRoot string) e
 
 // installISOPackages installs packages into the ISO root.
 func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) error {
-	b.logger.Info("Installing FreeBSD base system for bootable ISO...")
+	b.logger.Info("Installing FreeBSD base system from distribution archives...")
 
-	// For bootable ISOs, copy essential FreeBSD base system from FREEBSD_ROOT
-	// This supports both native FreeBSD builds and cross-building from Linux
+	// Use FreeBSD distribution archives (base.txz, kernel.txz) instead of manual copying
+	// This ensures completeness and reliability - the archives contain everything needed to boot
+	//
+	// Archives can be:
+	// 1. From FREEBSD_ROOT/.. (e.g., freebsd-dist/base.txz, freebsd-dist/kernel.txz)
+	// 2. Downloaded from FreeBSD mirrors
+	// 3. From local FreeBSD installation media
+	//
+	// This approach is used by GhostBSD and other FreeBSD-based distributions
+
+	// Look for distribution archives
+	distDir := filepath.Dir(b.freebsdRoot) // Parent of freebsd-dist/root
+	baseTxz := filepath.Join(distDir, "base.txz")
+	kernelTxz := filepath.Join(distDir, "kernel.txz")
+
+	// Also check in FREEBSD_ROOT itself
+	if !util.FileExists(baseTxz) {
+		baseTxz = filepath.Join(b.freebsdRoot, "..", "base.txz")
+	}
+	if !util.FileExists(kernelTxz) {
+		kernelTxz = filepath.Join(b.freebsdRoot, "..", "kernel.txz")
+	}
+
+	// Check if we have the archives
+	hasBase := util.FileExists(baseTxz)
+	hasKernel := util.FileExists(kernelTxz)
+
+	if hasBase && hasKernel {
+		// Extract archives - this is the preferred method
+		b.logger.Info("Found FreeBSD distribution archives, extracting...")
+
+		if err := b.extractTxzArchive(baseTxz, isoRoot); err != nil {
+			return fmt.Errorf("failed to extract base.txz: %w", err)
+		}
+		b.logger.Info("Extracted base.txz successfully")
+
+		if err := b.extractTxzArchive(kernelTxz, isoRoot); err != nil {
+			return fmt.Errorf("failed to extract kernel.txz: %w", err)
+		}
+		b.logger.Info("Extracted kernel.txz successfully")
+
+		// Verify critical files are present
+		if err := b.verifyBaseSystem(isoRoot); err != nil {
+			return fmt.Errorf("base system verification failed: %w", err)
+		}
+
+		b.logger.Info("FreeBSD base system installed successfully from archives")
+		return nil
+	}
+
+	// Fallback: If archives not available, try copying from FREEBSD_ROOT (old method)
+	b.logger.Warn("FreeBSD distribution archives not found at:")
+	b.logger.Warn("  - %s", baseTxz)
+	b.logger.Warn("  - %s", kernelTxz)
+	b.logger.Warn("Falling back to copying from FREEBSD_ROOT (less reliable)")
+	b.logger.Warn("For best results, provide base.txz and kernel.txz from FreeBSD distribution")
+
+	return b.installFromFreeBSDRoot(isoRoot)
+}
+
+// extractTxzArchive extracts a .txz (xz-compressed tar) archive to the target directory
+func (b *Builder) extractTxzArchive(archivePath, targetDir string) error {
+	b.logger.Debug("Extracting %s to %s...", archivePath, targetDir)
+
+	// Use tar with xz decompression
+	// tar -xJf <archive> -C <target>
+	tarPath, err := exec.LookPath("tar")
+	if err != nil {
+		return fmt.Errorf("tar command not found: %w", err)
+	}
+
+	cmd := exec.Command(tarPath, "-xJf", archivePath, "-C", targetDir)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tar extraction failed: %w\nOutput: %s", err, string(output))
+	}
+
+	if len(output) > 0 {
+		b.logger.Debug("Extraction output: %s", string(output))
+	}
+
+	return nil
+}
+
+// verifyBaseSystem verifies that critical files are present after installation
+func (b *Builder) verifyBaseSystem(isoRoot string) error {
+	b.logger.Debug("Verifying base system completeness...")
+
+	// Critical files that must be present for boot
+	criticalFiles := []string{
+		"boot/loader",
+		"boot/lua/loader.lua",
+		"boot/kernel/kernel",
+		"etc/rc",
+		"etc/rc.subr",
+		"bin/sh",
+		"sbin/init",
+	}
+
+	missingFiles := []string{}
+	for _, file := range criticalFiles {
+		fullPath := filepath.Join(isoRoot, file)
+		if !util.FileExists(fullPath) {
+			missingFiles = append(missingFiles, file)
+		}
+	}
+
+	if len(missingFiles) > 0 {
+		return fmt.Errorf("critical files missing from base system: %v", missingFiles)
+	}
+
+	b.logger.Info("Base system verification passed - all critical files present")
+	return nil
+}
+
+// installFromFreeBSDRoot is the fallback method that copies from FREEBSD_ROOT
+// This is less reliable but provided for compatibility
+func (b *Builder) installFromFreeBSDRoot(isoRoot string) error {
+	// Essential directories to copy
 	essentialDirs := []string{
 		"bin",
 		"sbin",
 		"lib",
 		"libexec",
-		"etc", // Critical: contains boot scripts (/etc/rc, /etc/rc.subr, etc.)
+		"etc",
 		"usr/bin",
 		"usr/sbin",
 		"usr/lib",
 		"usr/libexec",
 		"rescue",
+		"boot", // Include boot directory with all boot files
 	}
 
 	b.logger.Info("Copying essential base system directories from %s...", b.freebsdRoot)
@@ -192,74 +310,16 @@ func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) e
 		b.logger.Debug("Copying: %s -> %s", srcDir, destDir)
 		if err := util.CopyDir(srcDir, destDir); err != nil {
 			b.logger.Warn("Failed to copy %s: %v (continuing)", srcDir, err)
-			// Don't fail build, continue with other dirs
 		}
 	}
 
-	// Ensure critical system directories exist
-	criticalDirs := []string{
-		filepath.Join(isoRoot, "dev"),
-		filepath.Join(isoRoot, "tmp"),
-		filepath.Join(isoRoot, "var"),
-		filepath.Join(isoRoot, "var/run"),
-		filepath.Join(isoRoot, "var/log"),
-		filepath.Join(isoRoot, "root"),
-		filepath.Join(isoRoot, "proc"),
-		filepath.Join(isoRoot, "mnt"),
+	// Verify the copied system
+	if err := b.verifyBaseSystem(isoRoot); err != nil {
+		b.logger.Error("Base system incomplete after copying from FREEBSD_ROOT")
+		return err
 	}
 
-	for _, dir := range criticalDirs {
-		if err := util.EnsureDir(dir); err != nil {
-			return fmt.Errorf("failed to create %s: %w", dir, err)
-		}
-	}
-
-	// Explicitly verify and copy critical boot/init scripts
-	// These are essential for system boot and must be present
-	b.logger.Debug("Verifying critical boot scripts...")
-	criticalEtcFiles := []string{
-		"etc/rc",        // Main boot script (CRITICAL)
-		"etc/rc.subr",   // Boot script subroutines
-		"etc/rc.shutdown", // Shutdown script
-	}
-
-	for _, relPath := range criticalEtcFiles {
-		srcPath := filepath.Join(b.freebsdRoot, relPath)
-		dstPath := filepath.Join(isoRoot, relPath)
-
-		// Check if file exists in source
-		if !util.FileExists(srcPath) {
-			b.logger.Warn("Critical file not found in source: %s", srcPath)
-			continue
-		}
-
-		// Check if file was already copied
-		if util.FileExists(dstPath) {
-			b.logger.Debug("Critical file already present: %s", relPath)
-			continue
-		}
-
-		// File is missing from destination, copy it explicitly
-		b.logger.Warn("Critical file missing from ISO, copying explicitly: %s", relPath)
-		if err := util.CopyFile(srcPath, dstPath, 0644); err != nil {
-			return fmt.Errorf("failed to copy critical file %s: %w", relPath, err)
-		}
-		b.logger.Info("Copied critical boot script: %s", relPath)
-	}
-
-	// Ensure /etc/rc.d directory is copied (contains service scripts)
-	rcDirSrc := filepath.Join(b.freebsdRoot, "etc/rc.d")
-	rcDirDst := filepath.Join(isoRoot, "etc/rc.d")
-	if util.DirExists(rcDirSrc) && !util.DirExists(rcDirDst) {
-		b.logger.Warn("/etc/rc.d directory missing, copying explicitly...")
-		if err := util.CopyDir(rcDirSrc, rcDirDst); err != nil {
-			b.logger.Warn("Failed to copy /etc/rc.d: %v", err)
-		} else {
-			b.logger.Info("Copied /etc/rc.d directory with service scripts")
-		}
-	}
-
-	b.logger.Info("FreeBSD base system installed successfully")
+	b.logger.Info("FreeBSD base system installed from FREEBSD_ROOT")
 	return nil
 }
 
@@ -379,148 +439,66 @@ func (b *Builder) copySystemImages(cfg config.VariantConfig, isoRoot string) err
 	return nil
 }
 
-// installBootInfrastructure installs FreeBSD boot files needed for bootable ISO
+// installBootInfrastructure verifies boot files and sets up EFI boot structure
 func (b *Builder) installBootInfrastructure(isoRoot string) error {
-	// Copy essential boot files from FREEBSD_ROOT
-	// This makes the ISO bootable in both BIOS and UEFI modes
+	// When using kernel.txz extraction, all boot files are already present
+	// This function just verifies and sets up the EFI boot structure
 
+	b.logger.Debug("Verifying boot infrastructure...")
+
+	// Verify critical boot files are present (they should be from kernel.txz)
 	bootDir := filepath.Join(isoRoot, "boot")
-
-	// Required boot files for BIOS boot (relative paths from FREEBSD_ROOT)
-	biosBootFiles := []string{
-		"boot/cdboot",               // CD/DVD boot loader (required for El Torito)
-		"boot/isoboot",              // Hybrid ISO boot (required for USB boot support)
-		"boot/loader",               // Boot loader (stage 3)
-		"boot/loader.rc",            // Loader configuration
-		"boot/defaults/loader.conf", // Default loader settings
+	criticalBootFiles := []string{
+		"cdboot",           // CD/DVD boot loader
+		"loader",           // Boot loader
+		"kernel/kernel",    // Kernel
+		"lua/loader.lua",   // Lua boot loader
 	}
 
-	// Copy all Forth (.4th) files for loader.rc compatibility
-	// These are referenced by loader.rc and needed for the boot menu
-	b.logger.Debug("Copying Forth boot loader files...")
-	forthPattern := filepath.Join(b.freebsdRoot, "boot", "*.4th")
-	forthFiles, err := filepath.Glob(forthPattern)
-	if err == nil && len(forthFiles) > 0 {
-		for _, forthFile := range forthFiles {
-			relPath := filepath.Base(forthFile)
-			dstPath := filepath.Join(bootDir, relPath)
-			if err := util.CopyFile(forthFile, dstPath, 0644); err != nil {
-				b.logger.Warn("Failed to copy Forth file %s: %v", relPath, err)
-			} else {
-				b.logger.Debug("Copied Forth file: %s", relPath)
-			}
+	for _, file := range criticalBootFiles {
+		fullPath := filepath.Join(bootDir, file)
+		if !util.FileExists(fullPath) {
+			b.logger.Warn("Boot file missing: %s", file)
+			b.logger.Warn("This may indicate kernel.txz was not extracted or is incomplete")
+		} else {
+			b.logger.Debug("Boot file present: %s", file)
 		}
-		b.logger.Info("Copied %d Forth boot loader files", len(forthFiles))
-	} else {
-		b.logger.Warn("No Forth (.4th) files found - boot menu may not work properly")
-	}
-
-	b.logger.Debug("Copying BIOS boot files from %s...", b.freebsdRoot)
-	for _, relPath := range biosBootFiles {
-		srcPath := filepath.Join(b.freebsdRoot, relPath)
-
-		if _, err := os.Stat(srcPath); err != nil {
-			if os.IsNotExist(err) {
-				b.logger.Warn("Boot file not found (skipping): %s", srcPath)
-				continue
-			}
-			return fmt.Errorf("failed to access boot file %s: %w", srcPath, err)
-		}
-
-		// Determine destination path
-		bootRelPath := strings.TrimPrefix(relPath, "boot/")
-		dstPath := filepath.Join(bootDir, bootRelPath)
-
-		// Ensure destination directory exists
-		dstDir := filepath.Dir(dstPath)
-		if err := util.EnsureDir(dstDir); err != nil {
-			return err
-		}
-
-		// Copy the file
-		if err := util.CopyFile(srcPath, dstPath, 0644); err != nil {
-			return fmt.Errorf("failed to copy %s: %w", srcPath, err)
-		}
-	}
-
-	// Copy kernel (REQUIRED for boot)
-	b.logger.Info("Copying FreeBSD kernel (required for boot)...")
-	kernelSrc := filepath.Join(b.freebsdRoot, "boot/kernel/kernel")
-	if _, err := os.Stat(kernelSrc); err != nil {
-		return fmt.Errorf("kernel not found at %s - cannot create bootable ISO: %w", kernelSrc, err)
-	}
-
-	kernelDir := filepath.Join(bootDir, "kernel")
-	if err := util.EnsureDir(kernelDir); err != nil {
-		return fmt.Errorf("failed to create kernel directory: %w", err)
-	}
-
-	kernelDst := filepath.Join(kernelDir, "kernel")
-	b.logger.Debug("Copying kernel: %s -> %s", kernelSrc, kernelDst)
-	if err := util.CopyFile(kernelSrc, kernelDst, 0755); err != nil {
-		return fmt.Errorf("failed to copy kernel: %w", err)
-	}
-
-	// Verify kernel was copied
-	if info, err := os.Stat(kernelDst); err != nil {
-		return fmt.Errorf("kernel copy verification failed: %w", err)
-	} else {
-		b.logger.Info("Kernel copied successfully (%d bytes)", info.Size())
-	}
-
-	// Copy essential kernel modules
-	b.logger.Debug("Copying kernel modules...")
-	modules := []string{
-		"zfs.ko",        // ZFS filesystem
-		"geom_label.ko", // GEOM labels
-		"ahci.ko",       // AHCI disk controller
-	}
-
-	for _, module := range modules {
-		srcPath := filepath.Join(b.freebsdRoot, "boot/kernel", module)
-		if _, err := os.Stat(srcPath); err == nil {
-			dstPath := filepath.Join(bootDir, "kernel", module)
-			if err := util.CopyFile(srcPath, dstPath, 0644); err != nil {
-				b.logger.Warn("Failed to copy module %s: %v", module, err)
-			}
-		}
-	}
-
-	// Copy /boot/lua directory (CRITICAL for Lua-based boot loader)
-	b.logger.Debug("Copying boot loader Lua scripts...")
-	luaSrcDir := filepath.Join(b.freebsdRoot, "boot/lua")
-	if _, err := os.Stat(luaSrcDir); err == nil {
-		luaDstDir := filepath.Join(bootDir, "lua")
-		b.logger.Debug("Copying: %s -> %s", luaSrcDir, luaDstDir)
-		if err := util.CopyDir(luaSrcDir, luaDstDir); err != nil {
-			b.logger.Error("Failed to copy boot/lua directory: %v", err)
-			return fmt.Errorf("failed to copy critical boot/lua directory: %w", err)
-		}
-		b.logger.Info("Copied boot/lua directory with loader.lua and scripts")
-	} else {
-		b.logger.Warn("boot/lua directory not found at %s - Lua boot loader may not work", luaSrcDir)
-		b.logger.Warn("This may cause 'cannot open /boot/lua/loader.lua' errors during boot")
 	}
 
 	// Set up EFI boot directory for UEFI support
-	b.logger.Debug("Setting up EFI boot...")
+	b.logger.Debug("Setting up EFI boot structure...")
 	efiDir := filepath.Join(isoRoot, "EFI", "BOOT")
 	if err := util.EnsureDir(efiDir); err != nil {
 		return err
 	}
 
-	// Copy EFI boot loader if available
-	efiBootSrc := filepath.Join(b.freebsdRoot, "boot/boot1.efi")
-	if _, err := os.Stat(efiBootSrc); err == nil {
-		efiBootDst := filepath.Join(efiDir, "BOOTX64.EFI")
-		if err := util.CopyFile(efiBootSrc, efiBootDst, 0644); err != nil {
-			b.logger.Warn("Failed to copy EFI bootloader: %v", err)
-		}
-	} else {
-		b.logger.Warn("EFI bootloader not found - UEFI boot may not work")
+	// Check if EFI boot loader exists in the boot directory
+	// It may be boot1.efi or loader.efi depending on FreeBSD version
+	efiBootSources := []string{
+		filepath.Join(bootDir, "boot1.efi"),
+		filepath.Join(bootDir, "loader.efi"),
 	}
 
-	b.logger.Info("Boot infrastructure installed")
+	efiBootFound := false
+	for _, efiBootSrc := range efiBootSources {
+		if _, err := os.Stat(efiBootSrc); err == nil {
+			efiBootDst := filepath.Join(efiDir, "BOOTX64.EFI")
+			if err := util.CopyFile(efiBootSrc, efiBootDst, 0644); err != nil {
+				b.logger.Warn("Failed to copy EFI bootloader: %v", err)
+			} else {
+				b.logger.Info("Configured UEFI boot with %s", filepath.Base(efiBootSrc))
+				efiBootFound = true
+			}
+			break
+		}
+	}
+
+	if !efiBootFound {
+		b.logger.Warn("EFI bootloader not found - UEFI boot will not work")
+		b.logger.Warn("ISO will only be bootable in BIOS mode")
+	}
+
+	b.logger.Info("Boot infrastructure verification complete")
 	return nil
 }
 

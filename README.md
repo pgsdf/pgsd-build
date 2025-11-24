@@ -97,12 +97,9 @@ This creates artifacts in `artifacts/<image-id>/`:
 # List available variants
 ./bin/pgsdbuild list-variants
 
-# Build a bootable ISO
-# If freebsd-dist/root exists in the current directory, it will be auto-detected
+# Build a bootable ISO (recommended: use FreeBSD distribution archives)
+# Place base.txz and kernel.txz in freebsd-dist/ directory
 ./bin/pgsdbuild iso pgsd-bootenv-arcan
-
-# Or explicitly set FREEBSD_ROOT to point to a FreeBSD base system directory
-FREEBSD_ROOT=/path/to/freebsd-dist/root ./bin/pgsdbuild iso pgsd-bootenv-arcan
 
 # Build with make
 make build-iso VARIANT=pgsd-bootenv-minimal
@@ -111,27 +108,64 @@ make build-iso VARIANT=pgsd-bootenv-minimal
 make build-all-isos
 ```
 
-**Important:** The `FREEBSD_ROOT` environment variable should point to a directory containing a complete FreeBSD base system. If not set, the build system will attempt to auto-detect `freebsd-dist/root` in the current directory. This directory must include:
-- `/bin`, `/sbin`, `/lib`, `/libexec` - Core system binaries and libraries
-- `/etc` - Critical configuration files (`/etc/rc`, `/etc/rc.subr`, `/etc/login.conf`, etc.)
-- `/usr/bin`, `/usr/sbin`, `/usr/lib` - Additional utilities
-- `/boot` - Boot loader and kernel files, including:
-  - `/boot/loader`, `/boot/cdboot`, `/boot/isoboot` - Boot loader binaries
-  - `/boot/lua/loader.lua` - Lua boot loader scripts (**critical**)
-  - `/boot/kernel/kernel` - FreeBSD kernel
-  - `/boot/defaults/loader.conf` - Boot loader defaults
+#### FreeBSD Base System Requirements
 
-**Without FREEBSD_ROOT set correctly, the ISO will fail to boot with errors like:**
-- `ERROR: cannot open /boot/lua/loader.lua: no such file or directory`
-- `can't access /etc/rc : No such file or directory`
-- `login_getclass : unknown class 'daemon'`
+**Recommended Method (Most Reliable):** Use FreeBSD distribution archives
 
-The build system will:
-1. Use `FREEBSD_ROOT` if explicitly set
-2. Auto-detect `freebsd-dist/root` in the current directory if it exists and contains FreeBSD files
-3. Fall back to `/` (system root) for native FreeBSD builds
+The build system now supports using FreeBSD's official **base.txz** and **kernel.txz** archives. This is the **recommended approach** as it ensures completeness and boot reliability:
 
-For cross-building from Linux or other systems, ensure `freebsd-dist/root` contains an extracted FreeBSD base.txz and kernel.txz.
+```bash
+# Download FreeBSD distribution archives (example for FreeBSD 14.0)
+cd pgsd-build
+mkdir -p freebsd-dist
+cd freebsd-dist
+
+# Download from FreeBSD mirrors
+fetch https://download.freebsd.org/releases/amd64/14.0-RELEASE/base.txz
+fetch https://download.freebsd.org/releases/amd64/14.0-RELEASE/kernel.txz
+
+# Or extract from FreeBSD installation media
+# (if you have FreeBSD-14.0-RELEASE-amd64-disc1.iso mounted)
+cp /mnt/usr/freebsd-dist/base.txz .
+cp /mnt/usr/freebsd-dist/kernel.txz .
+
+# Return to repo root and build
+cd ..
+./bin/pgsdbuild iso pgsd-bootenv-arcan
+```
+
+The build system will automatically find and extract these archives.
+
+**What's in the archives:**
+- **base.txz** - Complete FreeBSD base system (/bin, /sbin, /lib, /etc, /usr, etc.)
+- **kernel.txz** - FreeBSD kernel and all boot files (/boot directory with loader, Lua scripts, etc.)
+
+**Why this works better:**
+- ✅ Complete and guaranteed to boot (official FreeBSD builds)
+- ✅ No missing files or manual copying errors
+- ✅ Reproducible builds across different systems
+- ✅ Works on any platform (Linux, macOS, FreeBSD)
+
+**Alternative Method (Fallback):** Copy from FREEBSD_ROOT
+
+If base.txz and kernel.txz are not available, the build system falls back to copying from `FREEBSD_ROOT`:
+
+```bash
+# Extract archives to freebsd-dist/root/
+mkdir -p freebsd-dist/root
+cd freebsd-dist/root
+tar -xJf ../base.txz
+tar -xJf ../kernel.txz
+cd ../..
+
+# Build with auto-detection
+./bin/pgsdbuild iso pgsd-bootenv-arcan
+
+# Or explicitly set FREEBSD_ROOT
+FREEBSD_ROOT=/path/to/freebsd-dist/root ./bin/pgsdbuild iso pgsd-bootenv-arcan
+```
+
+**Note:** The FREEBSD_ROOT fallback method is less reliable and may have missing files. Always prefer using the distribution archives directly.
 
 ISOs are created in `iso/<variant-id>.iso`
 
@@ -292,20 +326,21 @@ ERROR: cannot open /boot/lua/loader.lua: no such file or directory
 can't access /etc/rc : No such file or directory
 login_getclass : unknown class 'daemon'
 ```
-These errors indicate FREEBSD_ROOT was not detected or pointed to an incomplete directory:
+These errors indicate the base system is incomplete. **Solution: Use FreeBSD distribution archives:**
+
 ```bash
-# Verify freebsd-dist/root exists and contains required files
-ls -l freebsd-dist/root/boot/lua/loader.lua
-ls -l freebsd-dist/root/etc/rc
-ls -l freebsd-dist/root/etc/login.conf
+# Download official FreeBSD archives (most reliable method)
+mkdir -p freebsd-dist
+cd freebsd-dist
+fetch https://download.freebsd.org/releases/amd64/14.0-RELEASE/base.txz
+fetch https://download.freebsd.org/releases/amd64/14.0-RELEASE/kernel.txz
+cd ..
 
-# If the files exist, rebuild the ISO (auto-detection will find them)
-./bin/pgsdbuild iso pgsd-bootenv-minimal
-
-# Or explicitly set FREEBSD_ROOT
-export FREEBSD_ROOT=/home/user/pgsd-build/freebsd-dist/root
+# Rebuild the ISO - archives will be auto-detected and extracted
 ./bin/pgsdbuild iso pgsd-bootenv-minimal
 ```
+
+The archive-based approach ensures all boot files are present and eliminates these recurring issues.
 
 ## Architecture
 
