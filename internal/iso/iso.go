@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -251,19 +252,22 @@ func (b *Builder) configureBootLoader(cfg config.VariantConfig, isoRoot string) 
 
 	loaderConf := string(content)
 
-	// Replace empty vfs.root.mountfrom with explicit ISO9660 label mount
+	// Replace vfs.root.mountfrom with explicit ISO9660 label mount
 	// This is critical for BIOS boot on bare metal
-	oldLine := `vfs.root.mountfrom=""`
-	newLine := fmt.Sprintf(`vfs.root.mountfrom="cd9660:iso9660/%s"`, label)
+	// Format: cd9660:/dev/iso9660/LABEL (not cd9660:iso9660/LABEL)
+	newLine := fmt.Sprintf(`vfs.root.mountfrom="cd9660:/dev/iso9660/%s"`, label)
 
-	if strings.Contains(loaderConf, oldLine) {
-		loaderConf = strings.ReplaceAll(loaderConf, oldLine, newLine)
-		b.logger.Info("Configured root mount: cd9660:iso9660/%s", label)
+	// Replace any existing vfs.root.mountfrom line (empty, ZFS, or other)
+	// Use regex to match vfs.root.mountfrom="..." with any value
+	re := regexp.MustCompile(`vfs\.root\.mountfrom="[^"]*"`)
+	if re.MatchString(loaderConf) {
+		loaderConf = re.ReplaceAllString(loaderConf, newLine)
+		b.logger.Info("Configured root mount: cd9660:/dev/iso9660/%s", label)
 	} else {
 		// Add the configuration if not present
 		loaderConf += "\n# Root mount configuration for ISO boot\n"
 		loaderConf += fmt.Sprintf("%s\n", newLine)
-		b.logger.Info("Added root mount configuration: cd9660:iso9660/%s", label)
+		b.logger.Info("Added root mount configuration: cd9660:/dev/iso9660/%s", label)
 	}
 
 	// Write updated loader.conf

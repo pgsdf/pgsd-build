@@ -19,7 +19,7 @@ The ISO uses a **CD9660** (ISO 9660) filesystem as the root filesystem. The boot
 - `overlays/bootenv/boot/loader.conf` - For full boot environment
 - `overlays/bootenv-minimal/boot/loader.conf` - For minimal installer
 
-During the ISO build process, the `vfs.root.mountfrom` setting is automatically configured with the ISO volume label (e.g., `vfs.root.mountfrom="cd9660:iso9660/PGSDBOOTENVARCAN"`). This explicit configuration ensures reliable BIOS boot on bare metal, where auto-detection can fail.
+During the ISO build process, the `vfs.root.mountfrom` setting is automatically configured with the ISO volume label (e.g., `vfs.root.mountfrom="cd9660:/dev/iso9660/PGSDBOOTENVARCAN"`). This explicit configuration ensures reliable BIOS boot on bare metal, where auto-detection can fail.
 
 ### Writable Filesystem Overlays
 
@@ -90,12 +90,17 @@ This indicates the boot loader couldn't find the root filesystem. **This issue h
 If you're using an older ISO and encounter this:
 
 1. At the `mountroot>` prompt, type: `?`
-2. This will list available devices
-3. Try manually mounting: `cd9660:iso9660/<VOLUME_LABEL>`
+2. This will list available devices (look for `/dev/iso9660/<LABEL>`)
+3. Try manually mounting: `cd9660:/dev/iso9660/<VOLUME_LABEL>`
 
 **Volume labels:**
 - `PGSDBOOTENVARCAN` for pgsd-bootenv-arcan
 - `PGSDBOOTENVMINIMAL` for pgsd-bootenv-minimal
+
+**Example:**
+```
+mountroot> cd9660:/dev/iso9660/PGSDBOOTENVMINIMAL
+```
 
 If this happens with a recently built ISO, please report it as a bug.
 
