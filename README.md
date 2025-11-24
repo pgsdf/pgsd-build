@@ -98,11 +98,17 @@ This creates artifacts in `artifacts/<image-id>/`:
 ./bin/pgsdbuild list-variants
 
 # Build a bootable ISO
-./bin/pgsdbuild iso pgsd-bootenv-arcan
+# Set FREEBSD_ROOT to point to a FreeBSD base system directory
+FREEBSD_ROOT=/path/to/freebsd-dist/root ./bin/pgsdbuild iso pgsd-bootenv-arcan
+
+# Or use make with FREEBSD_ROOT
+FREEBSD_ROOT=/home/user/pgsd-build/freebsd-dist/root make build-iso VARIANT=pgsd-bootenv-minimal
 
 # Build all ISOs (includes all images)
-make build-all-isos
+FREEBSD_ROOT=/home/user/pgsd-build/freebsd-dist/root make build-all-isos
 ```
+
+**Important:** The `FREEBSD_ROOT` environment variable must point to a directory containing a complete FreeBSD base system (including `/bin`, `/sbin`, `/etc`, `/lib`, `/usr`, `/boot`, etc.). This is required for creating bootable ISOs.
 
 ISOs are created in `iso/<variant-id>.iso`
 

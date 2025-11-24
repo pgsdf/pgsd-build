@@ -151,6 +151,7 @@ func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) e
 		"sbin",
 		"lib",
 		"libexec",
+		"etc", // Critical: contains boot scripts (/etc/rc, /etc/rc.subr, etc.)
 		"usr/bin",
 		"usr/sbin",
 		"usr/lib",
