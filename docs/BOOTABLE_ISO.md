@@ -123,14 +123,31 @@ Some UEFI implementations are very strict about EFI boot structures. If your sys
 
 ## Building ISOs
 
-ISOs are built using the `pgsdbuild` tool:
+ISOs are built using the `pgsdbuild` tool. The build system will **automatically download** FreeBSD base system archives if they're not already cached:
 
 ```bash
 # Build full Arcan boot environment ISO
+# Archives will be auto-downloaded if not present
 pgsdbuild iso pgsd-bootenv-arcan
 
 # Build minimal installer ISO
 pgsdbuild iso pgsd-bootenv-minimal
+```
+
+**Auto-fetch Configuration:**
+
+```bash
+# Specify FreeBSD version (default: 14.2-RELEASE)
+export FREEBSD_VERSION=14.1-RELEASE
+
+# Specify architecture (default: amd64)
+export FREEBSD_ARCH=amd64
+
+# Use a custom mirror (optional)
+export FREEBSD_MIRROR=https://mirror.example.com
+
+# Disable auto-fetch (if you prefer manual downloads)
+export PGSD_AUTO_FETCH=0
 ```
 
 ### Required Tools

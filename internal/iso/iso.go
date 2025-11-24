@@ -14,6 +14,7 @@ import (
 
 	"github.com/pgsdf/pgsdbuild/internal/build"
 	"github.com/pgsdf/pgsdbuild/internal/config"
+	"github.com/pgsdf/pgsdbuild/internal/fetch"
 	"github.com/pgsdf/pgsdbuild/internal/util"
 )
 
@@ -165,23 +166,50 @@ func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) e
 	// This ensures completeness and reliability - the archives contain everything needed to boot
 	//
 	// Archives can be:
-	// 1. From FREEBSD_ROOT/.. (e.g., freebsd-dist/base.txz, freebsd-dist/kernel.txz)
-	// 2. Downloaded from FreeBSD mirrors
+	// 1. Auto-fetched from FreeBSD mirrors (if AutoFetch enabled)
+	// 2. From FREEBSD_ROOT/.. (e.g., freebsd-dist/base.txz, freebsd-dist/kernel.txz)
 	// 3. From local FreeBSD installation media
 	//
 	// This approach is used by GhostBSD and other FreeBSD-based distributions
 
-	// Look for distribution archives
+	// Determine distribution directory
 	distDir := filepath.Dir(b.freebsdRoot) // Parent of freebsd-dist/root
-	baseTxz := filepath.Join(distDir, "base.txz")
-	kernelTxz := filepath.Join(distDir, "kernel.txz")
 
-	// Also check in FREEBSD_ROOT itself
-	if !util.FileExists(baseTxz) {
-		baseTxz = filepath.Join(b.freebsdRoot, "..", "base.txz")
+	// If AutoFetch is enabled, try to fetch archives from FreeBSD mirrors
+	var baseTxz, kernelTxz string
+	if b.config.AutoFetch {
+		b.logger.Info("Auto-fetch enabled, checking for FreeBSD distribution archives...")
+
+		fetcher := fetch.NewFetcher(
+			b.config.FreeBSDVersion,
+			b.config.FreeBSDArch,
+			b.config.FreeBSDMirror,
+			distDir,
+			b.logger,
+		)
+
+		fetchedBase, fetchedKernel, err := fetcher.FetchArchives()
+		if err != nil {
+			b.logger.Warn("Failed to fetch archives: %v", err)
+			b.logger.Warn("Falling back to manual archive detection...")
+		} else {
+			baseTxz = fetchedBase
+			kernelTxz = fetchedKernel
+		}
 	}
-	if !util.FileExists(kernelTxz) {
-		kernelTxz = filepath.Join(b.freebsdRoot, "..", "kernel.txz")
+
+	// If not fetched, look for existing archives
+	if baseTxz == "" || kernelTxz == "" {
+		baseTxz = filepath.Join(distDir, "base.txz")
+		kernelTxz = filepath.Join(distDir, "kernel.txz")
+
+		// Also check in FREEBSD_ROOT itself
+		if !util.FileExists(baseTxz) {
+			baseTxz = filepath.Join(b.freebsdRoot, "..", "base.txz")
+		}
+		if !util.FileExists(kernelTxz) {
+			kernelTxz = filepath.Join(b.freebsdRoot, "..", "kernel.txz")
+		}
 	}
 
 	// Check if we have the archives
@@ -215,6 +243,16 @@ func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) e
 	b.logger.Warn("FreeBSD distribution archives not found at:")
 	b.logger.Warn("  - %s", baseTxz)
 	b.logger.Warn("  - %s", kernelTxz)
+
+	if !b.config.AutoFetch {
+		b.logger.Warn("")
+		b.logger.Warn("Auto-fetch is disabled. To enable automatic downloading from FreeBSD mirrors:")
+		b.logger.Warn("  - Set environment variable: PGSD_AUTO_FETCH=1")
+		b.logger.Warn("  - Or manually download from:")
+		b.logger.Warn("    https://download.freebsd.org/releases/%s/%s/", b.config.FreeBSDArch, b.config.FreeBSDVersion)
+		b.logger.Warn("")
+	}
+
 	b.logger.Warn("Falling back to copying from FREEBSD_ROOT (less reliable)")
 	b.logger.Warn("For best results, provide base.txz and kernel.txz from FreeBSD distribution")
 
