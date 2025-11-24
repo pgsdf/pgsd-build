@@ -110,22 +110,55 @@ make build-all-isos
 
 #### FreeBSD Base System Requirements
 
-**Recommended Method (Most Reliable):** Use FreeBSD distribution archives
+**Automatic Method (Recommended):** Let the build system fetch archives automatically
 
-The build system now supports using FreeBSD's official **base.txz** and **kernel.txz** archives. This is the **recommended approach** as it ensures completeness and boot reliability:
+The build system can **automatically download** FreeBSD's official **base.txz** and **kernel.txz** archives from FreeBSD mirrors. This is the **easiest and recommended approach**:
 
 ```bash
-# Download FreeBSD distribution archives (example for FreeBSD 14.0)
+# Auto-fetch is enabled by default - just build!
+./bin/pgsdbuild iso pgsd-bootenv-arcan
+
+# The build system will:
+# 1. Check if archives exist in freebsd-dist/
+# 2. If not, download them from FreeBSD mirrors
+# 3. Verify checksums for integrity
+# 4. Cache them for future builds
+```
+
+**Configuration:**
+
+The auto-fetch feature is controlled by environment variables:
+
+```bash
+# Specify FreeBSD version (default: 14.2-RELEASE)
+export FREEBSD_VERSION=14.1-RELEASE
+
+# Specify architecture (default: amd64)
+export FREEBSD_ARCH=amd64
+
+# Use a custom mirror (optional)
+export FREEBSD_MIRROR=https://mirror.example.com
+
+# Disable auto-fetch (if you prefer manual downloads)
+export PGSD_AUTO_FETCH=0
+```
+
+**Manual Method:** Download archives yourself
+
+If you prefer to download archives manually or auto-fetch is disabled:
+
+```bash
+# Download FreeBSD distribution archives (example for FreeBSD 14.2)
 cd pgsd-build
 mkdir -p freebsd-dist
 cd freebsd-dist
 
 # Download from FreeBSD mirrors
-fetch https://download.freebsd.org/releases/amd64/14.0-RELEASE/base.txz
-fetch https://download.freebsd.org/releases/amd64/14.0-RELEASE/kernel.txz
+fetch https://download.freebsd.org/releases/amd64/14.2-RELEASE/base.txz
+fetch https://download.freebsd.org/releases/amd64/14.2-RELEASE/kernel.txz
 
 # Or extract from FreeBSD installation media
-# (if you have FreeBSD-14.0-RELEASE-amd64-disc1.iso mounted)
+# (if you have FreeBSD-14.2-RELEASE-amd64-disc1.iso mounted)
 cp /mnt/usr/freebsd-dist/base.txz .
 cp /mnt/usr/freebsd-dist/kernel.txz .
 
@@ -141,10 +174,13 @@ The build system will automatically find and extract these archives.
 - **kernel.txz** - FreeBSD kernel and all boot files (/boot directory with loader, Lua scripts, etc.)
 
 **Why this works better:**
-- ✅ Complete and guaranteed to boot (official FreeBSD builds)
-- ✅ No missing files or manual copying errors
-- ✅ Reproducible builds across different systems
-- ✅ Works on any platform (Linux, macOS, FreeBSD)
+- ✅ **Automatic** - No manual downloads needed
+- ✅ **Cross-platform** - Works on Linux, macOS, and FreeBSD
+- ✅ **Complete and guaranteed to boot** - Official FreeBSD builds
+- ✅ **No missing files** - All boot files included
+- ✅ **Reproducible** - Same builds across different systems
+- ✅ **Verified** - Automatic checksum verification
+- ✅ **Cached** - Downloads once, reuses for future builds
 
 **Alternative Method (Fallback):** Copy from FREEBSD_ROOT
 
@@ -326,14 +362,18 @@ ERROR: cannot open /boot/lua/loader.lua: no such file or directory
 can't access /etc/rc : No such file or directory
 login_getclass : unknown class 'daemon'
 ```
-These errors indicate the base system is incomplete. **Solution: Use FreeBSD distribution archives:**
+These errors indicate the base system is incomplete. **Solution: Enable auto-fetch (default) or manually download archives:**
 
 ```bash
-# Download official FreeBSD archives (most reliable method)
+# Method 1: Auto-fetch (recommended - enabled by default)
+# Just rebuild the ISO - archives will be downloaded automatically
+./bin/pgsdbuild iso pgsd-bootenv-minimal
+
+# Method 2: Manual download (if auto-fetch is disabled)
 mkdir -p freebsd-dist
 cd freebsd-dist
-fetch https://download.freebsd.org/releases/amd64/14.0-RELEASE/base.txz
-fetch https://download.freebsd.org/releases/amd64/14.0-RELEASE/kernel.txz
+fetch https://download.freebsd.org/releases/amd64/14.2-RELEASE/base.txz
+fetch https://download.freebsd.org/releases/amd64/14.2-RELEASE/kernel.txz
 cd ..
 
 # Rebuild the ISO - archives will be auto-detected and extracted

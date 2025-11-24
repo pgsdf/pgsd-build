@@ -20,6 +20,12 @@ type Config struct {
 	KeepWork   bool
 	DiskSizeGB int
 
+	// FreeBSD distribution settings
+	FreeBSDVersion string // FreeBSD version to use (e.g., "14.0-RELEASE")
+	FreeBSDArch    string // Architecture (e.g., "amd64")
+	FreeBSDMirror  string // Mirror URL (optional, uses default if empty)
+	AutoFetch      bool   // Automatically fetch FreeBSD archives if missing
+
 	// Runtime paths
 	RootDir string
 }
@@ -27,16 +33,20 @@ type Config struct {
 // NewDefaultConfig creates a Config with default values.
 func NewDefaultConfig() *Config {
 	return &Config{
-		ImagesDir:    "images",
-		VariantsDir:  "variants",
-		ArtifactsDir: "artifacts",
-		WorkDir:      "work",
-		ISODir:       "iso",
-		OverlaysDir:  "overlays",
-		Verbose:      false,
-		KeepWork:     false,
-		DiskSizeGB:   10,
-		RootDir:      ".",
+		ImagesDir:      "images",
+		VariantsDir:    "variants",
+		ArtifactsDir:   "artifacts",
+		WorkDir:        "work",
+		ISODir:         "iso",
+		OverlaysDir:    "overlays",
+		Verbose:        false,
+		KeepWork:       false,
+		DiskSizeGB:     10,
+		FreeBSDVersion: "14.2-RELEASE", // Default to latest stable release
+		FreeBSDArch:    "amd64",         // Default to amd64
+		FreeBSDMirror:  "",              // Use default mirror
+		AutoFetch:      true,            // Enable automatic fetching by default
+		RootDir:        ".",
 	}
 }
 
@@ -103,6 +113,18 @@ func (c *Config) LoadFromEnv() {
 	}
 	if v := os.Getenv("PGSD_KEEP_WORK"); v == "1" || v == "true" {
 		c.KeepWork = true
+	}
+	if v := os.Getenv("FREEBSD_VERSION"); v != "" {
+		c.FreeBSDVersion = v
+	}
+	if v := os.Getenv("FREEBSD_ARCH"); v != "" {
+		c.FreeBSDArch = v
+	}
+	if v := os.Getenv("FREEBSD_MIRROR"); v != "" {
+		c.FreeBSDMirror = v
+	}
+	if v := os.Getenv("PGSD_AUTO_FETCH"); v == "0" || v == "false" {
+		c.AutoFetch = false
 	}
 }
 
