@@ -687,7 +687,7 @@ func (b *Builder) addMBRBootCode(isoPath, isoRoot string) error {
 	partitionTable[1] = 0x00  // Starting head
 	partitionTable[2] = 0x01  // Starting sector
 	partitionTable[3] = 0x00  // Starting cylinder
-	partitionTable[4] = 0x00  // Partition type (0x00 = empty, but works for ISO)
+	partitionTable[4] = 0xcd  // Partition type (0xcd = ISO 9660 filesystem)
 	partitionTable[5] = 0xFE  // Ending head
 	partitionTable[6] = 0xFF  // Ending sector
 	partitionTable[7] = 0xFF  // Ending cylinder
