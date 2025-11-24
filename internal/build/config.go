@@ -42,7 +42,7 @@ func NewDefaultConfig() *Config {
 		Verbose:        false,
 		KeepWork:       false,
 		DiskSizeGB:     10,
-		FreeBSDVersion: "14.2-RELEASE", // Default to latest stable release
+		FreeBSDVersion: "15.0-RC3", // Default to FreeBSD 15.0-RC3
 		FreeBSDArch:    "amd64",         // Default to amd64
 		FreeBSDMirror:  "",              // Use default mirror
 		AutoFetch:      true,            // Enable automatic fetching by default
