@@ -137,8 +137,8 @@ pgsdbuild iso pgsd-bootenv-minimal
 **Auto-fetch Configuration:**
 
 ```bash
-# Specify FreeBSD version (default: 14.2-RELEASE)
-export FREEBSD_VERSION=14.1-RELEASE
+# Specify FreeBSD version (default: 15.0-RC3)
+export FREEBSD_VERSION=15.0-RC3
 
 # Specify architecture (default: amd64)
 export FREEBSD_ARCH=amd64
