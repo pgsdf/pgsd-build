@@ -718,7 +718,7 @@ func (b *Builder) addMBRBootCode(isoPath, isoRoot string) error {
 	}
 	defer iso.Close()
 
-	// Write first 32KB of hybrid image to ISO
+	// Write first 32KB of hybrid image to ISO (MBR + primary GPT)
 	writeSize := 32768 // 32KB
 	if len(hybridData) < writeSize {
 		writeSize = len(hybridData)
@@ -729,7 +729,34 @@ func (b *Builder) addMBRBootCode(isoPath, isoRoot string) error {
 		return fmt.Errorf("failed to write hybrid boot structure: %w", err)
 	}
 
-	b.logger.Info("Wrote %d bytes of hybrid GPT/MBR boot structure to ISO", n)
+	b.logger.Debug("Wrote %d bytes of primary GPT/MBR boot structure to ISO", n)
+
+	// Write secondary GPT table at the end of the ISO
+	// GPT secondary consists of:
+	// - Partition entries array: 32 sectors (128 entries × 128 bytes = 16KB)
+	// - GPT header: 1 sector (512 bytes)
+	// Total: 33 sectors = 16896 bytes
+	secondaryGPTSize := 33 * 512 // 16896 bytes
+
+	if len(hybridData) >= secondaryGPTSize {
+		// Read secondary GPT from end of hybrid image
+		secondaryGPTData := hybridData[len(hybridData)-secondaryGPTSize:]
+
+		// Write secondary GPT to end of ISO
+		secondaryOffset := isoSize - int64(secondaryGPTSize)
+		n2, err := iso.WriteAt(secondaryGPTData, secondaryOffset)
+		if err != nil {
+			b.logger.Warn("Failed to write secondary GPT table: %v", err)
+			b.logger.Warn("ISO will still boot, but may show GEOM warnings when copied to USB")
+		} else {
+			b.logger.Debug("Wrote %d bytes of secondary GPT table at offset %d", n2, secondaryOffset)
+			b.logger.Info("Wrote complete hybrid GPT/MBR boot structure (primary + secondary)")
+		}
+	} else {
+		b.logger.Warn("Hybrid image too small to contain secondary GPT")
+		b.logger.Warn("ISO will still boot, but may show GEOM warnings when copied to USB")
+	}
+
 	return nil
 }
 
