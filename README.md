@@ -108,7 +108,22 @@ FREEBSD_ROOT=/home/user/pgsd-build/freebsd-dist/root make build-iso VARIANT=pgsd
 FREEBSD_ROOT=/home/user/pgsd-build/freebsd-dist/root make build-all-isos
 ```
 
-**Important:** The `FREEBSD_ROOT` environment variable must point to a directory containing a complete FreeBSD base system (including `/bin`, `/sbin`, `/etc`, `/lib`, `/usr`, `/boot`, etc.). This is required for creating bootable ISOs.
+**Important:** The `FREEBSD_ROOT` environment variable **must** be set and point to a directory containing a complete FreeBSD base system. This directory must include:
+- `/bin`, `/sbin`, `/lib`, `/libexec` - Core system binaries and libraries
+- `/etc` - Critical configuration files (`/etc/rc`, `/etc/rc.subr`, `/etc/login.conf`, etc.)
+- `/usr/bin`, `/usr/sbin`, `/usr/lib` - Additional utilities
+- `/boot` - Boot loader and kernel files, including:
+  - `/boot/loader`, `/boot/cdboot`, `/boot/isoboot` - Boot loader binaries
+  - `/boot/lua/loader.lua` - Lua boot loader scripts (**critical**)
+  - `/boot/kernel/kernel` - FreeBSD kernel
+  - `/boot/defaults/loader.conf` - Boot loader defaults
+
+**Without FREEBSD_ROOT set correctly, the ISO will fail to boot with errors like:**
+- `ERROR: cannot open /boot/lua/loader.lua: no such file or directory`
+- `can't access /etc/rc : No such file or directory`
+- `login_getclass : unknown class 'daemon'`
+
+If building on a FreeBSD system, you may omit FREEBSD_ROOT and it will default to `/` (system root). For cross-building from Linux or other systems, you must extract a FreeBSD base.txz and kernel.txz and point FREEBSD_ROOT to the extraction directory.
 
 ISOs are created in `iso/<variant-id>.iso`
 
@@ -262,6 +277,26 @@ sudo pgsd-inst
 **Missing image files:**
 - Ensure you've run `pgsdbuild image <name>` before building ISOs
 - Check `artifacts/<image-id>/` contains `root.zfs.xz`, `efi.img`, and `manifest.toml`
+
+**Boot errors with ISOs:**
+```
+ERROR: cannot open /boot/lua/loader.lua: no such file or directory
+can't access /etc/rc : No such file or directory
+login_getclass : unknown class 'daemon'
+```
+These errors indicate FREEBSD_ROOT was not set or pointed to an incomplete directory:
+```bash
+# Set FREEBSD_ROOT before building ISO
+export FREEBSD_ROOT=/home/user/pgsd-build/freebsd-dist/root
+
+# Verify the directory contains required files
+ls -l $FREEBSD_ROOT/boot/lua/loader.lua
+ls -l $FREEBSD_ROOT/etc/rc
+ls -l $FREEBSD_ROOT/etc/login.conf
+
+# Rebuild the ISO
+./bin/pgsdbuild iso pgsd-bootenv-minimal
+```
 
 ## Architecture
 

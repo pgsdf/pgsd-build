@@ -404,6 +404,22 @@ func (b *Builder) installBootInfrastructure(isoRoot string) error {
 		}
 	}
 
+	// Copy /boot/lua directory (CRITICAL for Lua-based boot loader)
+	b.logger.Debug("Copying boot loader Lua scripts...")
+	luaSrcDir := filepath.Join(b.freebsdRoot, "boot/lua")
+	if _, err := os.Stat(luaSrcDir); err == nil {
+		luaDstDir := filepath.Join(bootDir, "lua")
+		b.logger.Debug("Copying: %s -> %s", luaSrcDir, luaDstDir)
+		if err := util.CopyDir(luaSrcDir, luaDstDir); err != nil {
+			b.logger.Error("Failed to copy boot/lua directory: %v", err)
+			return fmt.Errorf("failed to copy critical boot/lua directory: %w", err)
+		}
+		b.logger.Info("Copied boot/lua directory with loader.lua and scripts")
+	} else {
+		b.logger.Warn("boot/lua directory not found at %s - Lua boot loader may not work", luaSrcDir)
+		b.logger.Warn("This may cause 'cannot open /boot/lua/loader.lua' errors during boot")
+	}
+
 	// Set up EFI boot directory for UEFI support
 	b.logger.Debug("Setting up EFI boot...")
 	efiDir := filepath.Join(isoRoot, "EFI", "BOOT")
