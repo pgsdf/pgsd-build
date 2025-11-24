@@ -14,12 +14,12 @@ PGSD ISOs support multiple boot modes:
 
 ### Root Filesystem
 
-The ISO uses a **CD9660** (ISO 9660) filesystem as the root filesystem. The boot loader configuration files have been set up to auto-detect the boot device:
+The ISO uses a **CD9660** (ISO 9660) filesystem as the root filesystem. The boot loader is configured during ISO build to explicitly mount using the ISO9660 volume label:
 
 - `overlays/bootenv/boot/loader.conf` - For full boot environment
 - `overlays/bootenv-minimal/boot/loader.conf` - For minimal installer
 
-These configurations use `vfs.root.mountfrom=""` to let FreeBSD auto-detect the CD9660 filesystem.
+During the ISO build process, the `vfs.root.mountfrom` setting is automatically configured with the ISO volume label (e.g., `vfs.root.mountfrom="cd9660:iso9660/PGSDBOOTENVARCAN"`). This explicit configuration ensures reliable BIOS boot on bare metal, where auto-detection can fail.
 
 ### Writable Filesystem Overlays
 
@@ -85,17 +85,21 @@ For a GUI experience, you can use:
 
 #### Stuck at `mountroot>` prompt
 
-This indicates the boot loader couldn't auto-detect the root filesystem. This should be fixed in the latest version, but if you encounter it:
+This indicates the boot loader couldn't find the root filesystem. **This issue has been fixed** in recent builds by explicitly configuring the ISO9660 volume label in loader.conf during build.
+
+If you're using an older ISO and encounter this:
 
 1. At the `mountroot>` prompt, type: `?`
 2. This will list available devices
-3. Try manually mounting: `cd9660:/dev/cd0` or `cd9660:iso9660/<VOLUME_LABEL>`
+3. Try manually mounting: `cd9660:iso9660/<VOLUME_LABEL>`
 
 **Volume labels:**
 - `PGSDBOOTENVARCAN` for pgsd-bootenv-arcan
 - `PGSDBOOTENVMINIMAL` for pgsd-bootenv-minimal
 
-If this happens, please report it as a bug.
+If this happens with a recently built ISO, please report it as a bug.
+
+**Fix for older ISOs:** Rebuild with the latest version which includes the configureBootLoader step that injects the correct volume label.
 
 #### UEFI firmware doesn't detect the USB drive
 
