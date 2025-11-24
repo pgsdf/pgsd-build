@@ -98,17 +98,20 @@ This creates artifacts in `artifacts/<image-id>/`:
 ./bin/pgsdbuild list-variants
 
 # Build a bootable ISO
-# Set FREEBSD_ROOT to point to a FreeBSD base system directory
+# If freebsd-dist/root exists in the current directory, it will be auto-detected
+./bin/pgsdbuild iso pgsd-bootenv-arcan
+
+# Or explicitly set FREEBSD_ROOT to point to a FreeBSD base system directory
 FREEBSD_ROOT=/path/to/freebsd-dist/root ./bin/pgsdbuild iso pgsd-bootenv-arcan
 
-# Or use make with FREEBSD_ROOT
-FREEBSD_ROOT=/home/user/pgsd-build/freebsd-dist/root make build-iso VARIANT=pgsd-bootenv-minimal
+# Build with make
+make build-iso VARIANT=pgsd-bootenv-minimal
 
 # Build all ISOs (includes all images)
-FREEBSD_ROOT=/home/user/pgsd-build/freebsd-dist/root make build-all-isos
+make build-all-isos
 ```
 
-**Important:** The `FREEBSD_ROOT` environment variable **must** be set and point to a directory containing a complete FreeBSD base system. This directory must include:
+**Important:** The `FREEBSD_ROOT` environment variable should point to a directory containing a complete FreeBSD base system. If not set, the build system will attempt to auto-detect `freebsd-dist/root` in the current directory. This directory must include:
 - `/bin`, `/sbin`, `/lib`, `/libexec` - Core system binaries and libraries
 - `/etc` - Critical configuration files (`/etc/rc`, `/etc/rc.subr`, `/etc/login.conf`, etc.)
 - `/usr/bin`, `/usr/sbin`, `/usr/lib` - Additional utilities
@@ -123,7 +126,12 @@ FREEBSD_ROOT=/home/user/pgsd-build/freebsd-dist/root make build-all-isos
 - `can't access /etc/rc : No such file or directory`
 - `login_getclass : unknown class 'daemon'`
 
-If building on a FreeBSD system, you may omit FREEBSD_ROOT and it will default to `/` (system root). For cross-building from Linux or other systems, you must extract a FreeBSD base.txz and kernel.txz and point FREEBSD_ROOT to the extraction directory.
+The build system will:
+1. Use `FREEBSD_ROOT` if explicitly set
+2. Auto-detect `freebsd-dist/root` in the current directory if it exists and contains FreeBSD files
+3. Fall back to `/` (system root) for native FreeBSD builds
+
+For cross-building from Linux or other systems, ensure `freebsd-dist/root` contains an extracted FreeBSD base.txz and kernel.txz.
 
 ISOs are created in `iso/<variant-id>.iso`
 
@@ -284,17 +292,18 @@ ERROR: cannot open /boot/lua/loader.lua: no such file or directory
 can't access /etc/rc : No such file or directory
 login_getclass : unknown class 'daemon'
 ```
-These errors indicate FREEBSD_ROOT was not set or pointed to an incomplete directory:
+These errors indicate FREEBSD_ROOT was not detected or pointed to an incomplete directory:
 ```bash
-# Set FREEBSD_ROOT before building ISO
+# Verify freebsd-dist/root exists and contains required files
+ls -l freebsd-dist/root/boot/lua/loader.lua
+ls -l freebsd-dist/root/etc/rc
+ls -l freebsd-dist/root/etc/login.conf
+
+# If the files exist, rebuild the ISO (auto-detection will find them)
+./bin/pgsdbuild iso pgsd-bootenv-minimal
+
+# Or explicitly set FREEBSD_ROOT
 export FREEBSD_ROOT=/home/user/pgsd-build/freebsd-dist/root
-
-# Verify the directory contains required files
-ls -l $FREEBSD_ROOT/boot/lua/loader.lua
-ls -l $FREEBSD_ROOT/etc/rc
-ls -l $FREEBSD_ROOT/etc/login.conf
-
-# Rebuild the ISO
 ./bin/pgsdbuild iso pgsd-bootenv-minimal
 ```
 
