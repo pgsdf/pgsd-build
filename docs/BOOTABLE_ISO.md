@@ -93,13 +93,12 @@ If you're using an older ISO and encounter this:
 2. This will list available devices (look for `/dev/iso9660/<LABEL>`)
 3. Try manually mounting: `cd9660:/dev/iso9660/<VOLUME_LABEL>`
 
-**Volume labels:**
-- `PGSDBOOTENVARCAN` for pgsd-bootenv-arcan
-- `PGSDBOOTENVMINIMAL` for pgsd-bootenv-minimal
+**Volume label:**
+- `PGSD` for all PGSD boot ISOs
 
 **Example:**
 ```
-mountroot> cd9660:/dev/iso9660/PGSDBOOTENVMINIMAL
+mountroot> cd9660:/dev/iso9660/PGSD
 ```
 
 If this happens with a recently built ISO, please report it as a bug.

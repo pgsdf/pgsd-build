@@ -225,14 +225,9 @@ func (b *Builder) applyISOOverlays(cfg config.VariantConfig, isoRoot string) err
 
 // configureBootLoader configures the boot loader with ISO-specific settings
 func (b *Builder) configureBootLoader(cfg config.VariantConfig, isoRoot string) error {
-	// Calculate ISO label (same logic as in assembleISO)
-	label := cfg.ID
-	label = strings.ReplaceAll(label, "-", "")
-	label = strings.ReplaceAll(label, "_", "")
-	if len(label) > 32 {
-		label = label[:32]
-	}
-	label = strings.ToUpper(label)
+	// Use a short, simple label: "PGSD" for all variants
+	// This avoids issues with long labels and makes it easier for users
+	label := "PGSD"
 
 	// Update loader.conf to use ISO9660 label for root mount
 	// This fixes BIOS boot on bare metal where auto-detection fails
@@ -463,16 +458,9 @@ func (b *Builder) assembleISO(cfg config.VariantConfig, isoRoot, outputPath stri
 	// Create bootable ISO using makefs
 	// This requires FreeBSD with makefs utility
 
-	// Determine ISO label (max 32 characters, alphanumeric only for cd9660)
-	// makefs cd9660 requires "d-characters" (digits/letters) only in labels
-	label := cfg.ID
-	label = strings.ReplaceAll(label, "-", "")
-	label = strings.ReplaceAll(label, "_", "")
-	if len(label) > 32 {
-		label = label[:32]
-	}
-	// Ensure label is uppercase for consistency
-	label = strings.ToUpper(label)
+	// Use a short, simple label: "PGSD" for all variants
+	// This must match the label used in configureBootLoader
+	label := "PGSD"
 
 	b.logger.Debug("Creating ISO filesystem...")
 	b.logger.Debug("ISO label: %s", label)
