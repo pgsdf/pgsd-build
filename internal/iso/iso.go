@@ -87,6 +87,12 @@ func (b *Builder) Build(cfg config.VariantConfig) error {
 		return fmt.Errorf("failed to apply overlays: %w", err)
 	}
 
+	// Step 3.5: Configure boot loader with ISO-specific settings
+	b.logger.Debug("Configuring boot loader...")
+	if err := b.configureBootLoader(cfg, isoRoot); err != nil {
+		return fmt.Errorf("failed to configure boot loader: %w", err)
+	}
+
 	// Step 4: Copy system images
 	if cfg.ImagesDir != "" {
 		b.logger.Debug("Copying system images...")
@@ -212,6 +218,60 @@ func (b *Builder) applyISOOverlays(cfg config.VariantConfig, isoRoot string) err
 
 		b.logger.Debug("Applied overlay: %s", overlay)
 	}
+	return nil
+}
+
+// configureBootLoader configures the boot loader with ISO-specific settings
+func (b *Builder) configureBootLoader(cfg config.VariantConfig, isoRoot string) error {
+	// Calculate ISO label (same logic as in assembleISO)
+	label := cfg.ID
+	label = strings.ReplaceAll(label, "-", "")
+	label = strings.ReplaceAll(label, "_", "")
+	if len(label) > 32 {
+		label = label[:32]
+	}
+	label = strings.ToUpper(label)
+
+	// Update loader.conf to use ISO9660 label for root mount
+	// This fixes BIOS boot on bare metal where auto-detection fails
+	loaderConfPath := filepath.Join(isoRoot, "boot/loader.conf")
+	if _, err := os.Stat(loaderConfPath); err != nil {
+		if os.IsNotExist(err) {
+			b.logger.Warn("loader.conf not found at %s - boot configuration may be incomplete", loaderConfPath)
+			return nil
+		}
+		return fmt.Errorf("failed to access loader.conf: %w", err)
+	}
+
+	// Read current loader.conf
+	content, err := os.ReadFile(loaderConfPath)
+	if err != nil {
+		return fmt.Errorf("failed to read loader.conf: %w", err)
+	}
+
+	loaderConf := string(content)
+
+	// Replace empty vfs.root.mountfrom with explicit ISO9660 label mount
+	// This is critical for BIOS boot on bare metal
+	oldLine := `vfs.root.mountfrom=""`
+	newLine := fmt.Sprintf(`vfs.root.mountfrom="cd9660:iso9660/%s"`, label)
+
+	if strings.Contains(loaderConf, oldLine) {
+		loaderConf = strings.ReplaceAll(loaderConf, oldLine, newLine)
+		b.logger.Info("Configured root mount: cd9660:iso9660/%s", label)
+	} else {
+		// Add the configuration if not present
+		loaderConf += "\n# Root mount configuration for ISO boot\n"
+		loaderConf += fmt.Sprintf("%s\n", newLine)
+		b.logger.Info("Added root mount configuration: cd9660:iso9660/%s", label)
+	}
+
+	// Write updated loader.conf
+	if err := os.WriteFile(loaderConfPath, []byte(loaderConf), 0644); err != nil {
+		return fmt.Errorf("failed to write loader.conf: %w", err)
+	}
+
+	b.logger.Debug("Boot loader configuration updated")
 	return nil
 }
 
