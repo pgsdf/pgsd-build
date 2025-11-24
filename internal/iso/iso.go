@@ -759,6 +759,92 @@ func (b *Builder) createEFIBootImage(outputPath, efiBootPath string) error {
 	return nil
 }
 
+// createEFIBootImageForISO creates a proper FAT filesystem image with EFI bootloader for ISO El Torito
+func (b *Builder) createEFIBootImageForISO(outputPath, efiBootPath string) error {
+	// Create a 4MB FAT16 image for EFI boot (larger to accommodate BOOTX64.EFI)
+	imageSize := 4096 * 1024 // 4MB
+
+	// Try using mformat (from mtools) to create a FAT filesystem
+	// This is the most reliable cross-platform method
+	mformatPath, err := exec.LookPath("mformat")
+	if err != nil {
+		b.logger.Warn("mformat not found - trying dd + mkfs.vfat method")
+		return b.createEFIBootImageDirect(outputPath, efiBootPath, imageSize)
+	}
+
+	// Create the image file
+	img, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create EFI image: %w", err)
+	}
+	img.Close()
+
+	// Use mformat to create FAT filesystem
+	// -i: specify image file
+	// -C: create image
+	// -f: format (1440 = 1.44MB, 2880 = 2.88MB floppy formats)
+	// We'll use custom size
+	cmd := exec.Command(mformatPath, "-i", outputPath, "-C", "-T", fmt.Sprintf("%d", imageSize/512), "-h", "64", "-s", "32", "::")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		b.logger.Warn("mformat failed: %v, output: %s - trying fallback", err, string(output))
+		return b.createEFIBootImageDirect(outputPath, efiBootPath, imageSize)
+	}
+
+	// Use mcopy to copy the EFI bootloader into the image
+	mcopyPath, err := exec.LookPath("mcopy")
+	if err != nil {
+		b.logger.Warn("mcopy not found - EFI image may not boot")
+		return nil
+	}
+
+	// Create EFI/BOOT directory structure and copy bootloader
+	// mcopy -i image.img source ::destination
+	cmd = exec.Command(mcopyPath, "-i", outputPath, efiBootPath, "::BOOTX64.EFI")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		b.logger.Warn("mcopy failed: %v, output: %s", err, string(output))
+		return fmt.Errorf("failed to copy EFI bootloader into image: %w", err)
+	}
+
+	b.logger.Info("Created EFI boot image with FAT filesystem (%d KB)", imageSize/1024)
+	return nil
+}
+
+// createEFIBootImageDirect creates EFI boot image using dd and mkfs.vfat (fallback method)
+func (b *Builder) createEFIBootImageDirect(outputPath, efiBootPath string, imageSize int) error {
+	// Create empty image file
+	ddPath, err := exec.LookPath("dd")
+	if err != nil {
+		return fmt.Errorf("dd command not found: %w", err)
+	}
+
+	cmd := exec.Command(ddPath, "if=/dev/zero", fmt.Sprintf("of=%s", outputPath),
+		"bs=1024", fmt.Sprintf("count=%d", imageSize/1024))
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("dd failed: %w, output: %s", err, string(output))
+	}
+
+	// Format as FAT
+	mkfsPath, err := exec.LookPath("mkfs.vfat")
+	if err != nil {
+		// Try mkfs.msdos as fallback
+		mkfsPath, err = exec.LookPath("mkfs.msdos")
+		if err != nil {
+			b.logger.Warn("mkfs.vfat/mkfs.msdos not found - cannot create FAT filesystem")
+			return fmt.Errorf("FAT filesystem tools not available")
+		}
+	}
+
+	cmd = exec.Command(mkfsPath, "-F", "16", "-n", "EFIBOOT", outputPath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("mkfs.vfat failed: %w, output: %s", err, string(output))
+	}
+
+	// Mount and copy (requires root or fuse)
+	b.logger.Warn("Created empty FAT image - EFI bootloader not copied (requires mtools)")
+	b.logger.Warn("Install mtools package for proper EFI boot support")
+	return nil
+}
+
 // addMBRBootCodeFallback is the fallback method when mkimg is not available
 // This writes a simple MBR boot structure (original method)
 func (b *Builder) addMBRBootCodeFallback(isoPath, isoRoot string) error {
@@ -950,13 +1036,39 @@ func (b *Builder) createISOWithGenisoimage(toolPath, outputPath, isoRoot, label 
 	}
 
 	if hasCdboot {
+		// Check if EFI bootloader exists for UEFI support
+		efiBootPath := filepath.Join(isoRoot, "EFI/BOOT/BOOTX64.EFI")
+		hasEFI := false
+		if stat, err := os.Stat(efiBootPath); err == nil && !stat.IsDir() {
+			hasEFI = true
+		}
+
+		// Add BIOS boot configuration (CD/DVD and USB)
 		args = append(args,
 			"-b", "boot/cdboot", // Boot image
+			"-c", "boot.catalog", // Boot catalog
 			"-no-emul-boot",        // No emulation
 			"-boot-load-size", "4", // Load size
 			"-boot-info-table", // Create boot info table
 		)
 		b.logger.Info("Configured for BIOS boot with boot/cdboot")
+
+		// Add UEFI boot configuration
+		if hasEFI {
+			// Create EFI boot image for El Torito
+			efiImgPath := filepath.Join(isoRoot, "boot/efiboot.img")
+			if err := b.createEFIBootImageForISO(efiImgPath, efiBootPath); err != nil {
+				b.logger.Warn("Failed to create EFI boot image: %v - UEFI boot may not work", err)
+			} else {
+				args = append(args,
+					"-eltorito-alt-boot",                    // Alternative boot entry
+					"-eltorito-platform", "efi",             // EFI platform
+					"-eltorito-boot", "boot/efiboot.img",    // EFI boot image
+					"-no-emul-boot",                         // No emulation
+				)
+				b.logger.Info("Configured for UEFI boot with boot/efiboot.img")
+			}
+		}
 	} else {
 		b.logger.Info("Creating non-bootable ISO (no boot files available)")
 	}
