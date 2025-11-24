@@ -2,7 +2,9 @@ package image
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -83,6 +85,12 @@ func (b *Builder) Build(cfg config.ImageConfig) error {
 	b.logger.Debug("Applying overlays...")
 	if err := b.applyOverlays(cfg, rootMount); err != nil {
 		return fmt.Errorf("failed to apply overlays: %w", err)
+	}
+
+	// Apply ZFS dataset overlays
+	b.logger.Debug("Applying dataset overlays...")
+	if err := b.applyDatasetOverlays(cfg); err != nil {
+		return fmt.Errorf("failed to apply dataset overlays: %w", err)
 	}
 
 	// Step 5: Create snapshot
@@ -233,6 +241,74 @@ func (b *Builder) applyOverlays(cfg config.ImageConfig, rootMount string) error 
 
 		b.logger.Debug("Applied overlay: %s", overlay)
 	}
+	return nil
+}
+
+// applyDatasetOverlays receives ZFS datasets into the image pool.
+func (b *Builder) applyDatasetOverlays(cfg config.ImageConfig) error {
+	if len(cfg.DatasetOverlays) == 0 {
+		b.logger.Debug("No dataset overlays configured")
+		return nil
+	}
+
+	pool := cfg.ZpoolName
+
+	for _, o := range cfg.DatasetOverlays {
+		if o.Source == "" || o.Name == "" {
+			return fmt.Errorf("dataset overlay missing source or name")
+		}
+
+		target := fmt.Sprintf("%s/OVERLAYS/%s", pool, o.Name)
+
+		b.logger.Info("Receiving dataset overlay: %s -> %s", o.Source, target)
+
+		// Build zfs recv command with properties
+		recvArgs := []string{"recv", "-u"} // -u = don't mount
+		if o.Mountpoint != "" {
+			recvArgs = append(recvArgs, "-o", "mountpoint="+o.Mountpoint)
+		}
+		if o.CanMount != "" {
+			recvArgs = append(recvArgs, "-o", "canmount="+o.CanMount)
+		}
+		for k, v := range o.Properties {
+			recvArgs = append(recvArgs, "-o", fmt.Sprintf("%s=%s", k, v))
+		}
+		recvArgs = append(recvArgs, target)
+
+		// Pipe: zfs send source | zfs recv target
+		send := exec.Command("zfs", "send", "-p", o.Source)
+		recv := exec.Command("zfs", recvArgs...)
+
+		pipe, err := send.StdoutPipe()
+		if err != nil {
+			return fmt.Errorf("failed to create pipe for %s: %w", o.Name, err)
+		}
+		recv.Stdin = pipe
+
+		// Capture stderr for debugging
+		sendErr, _ := send.StderrPipe()
+		recvErr, _ := recv.StderrPipe()
+
+		if err := send.Start(); err != nil {
+			return fmt.Errorf("failed to start zfs send for %s: %w", o.Source, err)
+		}
+		if err := recv.Start(); err != nil {
+			return fmt.Errorf("failed to start zfs recv for %s: %w", target, err)
+		}
+
+		// Wait for both commands to complete
+		if err := send.Wait(); err != nil {
+			stderr, _ := io.ReadAll(sendErr)
+			return fmt.Errorf("zfs send failed for %s: %w\nOutput: %s", o.Source, err, string(stderr))
+		}
+		if err := recv.Wait(); err != nil {
+			stderr, _ := io.ReadAll(recvErr)
+			return fmt.Errorf("zfs recv failed for %s: %w\nOutput: %s", target, err, string(stderr))
+		}
+
+		b.logger.Debug("Applied dataset overlay: %s", o.Name)
+	}
+
 	return nil
 }
 
