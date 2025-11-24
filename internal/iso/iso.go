@@ -30,7 +30,24 @@ func NewBuilder(cfg *build.Config, logger *util.Logger) *Builder {
 	// Set FREEBSD_ROOT env var to point to extracted FreeBSD distribution
 	freebsdRoot := os.Getenv("FREEBSD_ROOT")
 	if freebsdRoot == "" {
-		freebsdRoot = "/" // Default to system root for native builds
+		// Auto-detect freebsd-dist/root directory relative to working directory
+		// This is useful when building from the repository root
+		if cwd, err := os.Getwd(); err == nil {
+			candidatePath := filepath.Join(cwd, "freebsd-dist", "root")
+			if util.DirExists(candidatePath) {
+				// Verify it has essential FreeBSD files
+				if util.FileExists(filepath.Join(candidatePath, "bin", "sh")) &&
+					util.FileExists(filepath.Join(candidatePath, "etc", "rc")) {
+					freebsdRoot = candidatePath
+					logger.Info("Auto-detected FREEBSD_ROOT: %s", freebsdRoot)
+				}
+			}
+		}
+
+		// Fall back to system root for native FreeBSD builds
+		if freebsdRoot == "" {
+			freebsdRoot = "/" // Default to system root for native builds
+		}
 	}
 
 	return &Builder{
