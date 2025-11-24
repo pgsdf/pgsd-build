@@ -175,6 +175,16 @@ func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) e
 	// Determine distribution directory
 	distDir := filepath.Dir(b.freebsdRoot) // Parent of freebsd-dist/root
 
+	// Fix: If distDir is root (/) - which happens on native FreeBSD where FREEBSD_ROOT=/
+	// then we can't write there without root permissions. Use work directory instead.
+	if distDir == "/" || distDir == "." || distDir == "" {
+		distDir = filepath.Join(b.config.GetWorkDir(), "cache")
+		b.logger.Info("FREEBSD_ROOT is system root, using cache directory: %s", distDir)
+		if err := util.EnsureDir(distDir); err != nil {
+			return fmt.Errorf("failed to create cache directory: %w", err)
+		}
+	}
+
 	// If AutoFetch is enabled, try to fetch archives from FreeBSD mirrors
 	var baseTxz, kernelTxz string
 	if b.config.AutoFetch {
