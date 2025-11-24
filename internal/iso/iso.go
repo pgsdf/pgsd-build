@@ -214,6 +214,51 @@ func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) e
 		}
 	}
 
+	// Explicitly verify and copy critical boot/init scripts
+	// These are essential for system boot and must be present
+	b.logger.Debug("Verifying critical boot scripts...")
+	criticalEtcFiles := []string{
+		"etc/rc",        // Main boot script (CRITICAL)
+		"etc/rc.subr",   // Boot script subroutines
+		"etc/rc.shutdown", // Shutdown script
+	}
+
+	for _, relPath := range criticalEtcFiles {
+		srcPath := filepath.Join(b.freebsdRoot, relPath)
+		dstPath := filepath.Join(isoRoot, relPath)
+
+		// Check if file exists in source
+		if !util.FileExists(srcPath) {
+			b.logger.Warn("Critical file not found in source: %s", srcPath)
+			continue
+		}
+
+		// Check if file was already copied
+		if util.FileExists(dstPath) {
+			b.logger.Debug("Critical file already present: %s", relPath)
+			continue
+		}
+
+		// File is missing from destination, copy it explicitly
+		b.logger.Warn("Critical file missing from ISO, copying explicitly: %s", relPath)
+		if err := util.CopyFile(srcPath, dstPath, 0644); err != nil {
+			return fmt.Errorf("failed to copy critical file %s: %w", relPath, err)
+		}
+		b.logger.Info("Copied critical boot script: %s", relPath)
+	}
+
+	// Ensure /etc/rc.d directory is copied (contains service scripts)
+	rcDirSrc := filepath.Join(b.freebsdRoot, "etc/rc.d")
+	rcDirDst := filepath.Join(isoRoot, "etc/rc.d")
+	if util.DirExists(rcDirSrc) && !util.DirExists(rcDirDst) {
+		b.logger.Warn("/etc/rc.d directory missing, copying explicitly...")
+		if err := util.CopyDir(rcDirSrc, rcDirDst); err != nil {
+			b.logger.Warn("Failed to copy /etc/rc.d: %v", err)
+		} else {
+			b.logger.Info("Copied /etc/rc.d directory with service scripts")
+		}
+	}
+
 	b.logger.Info("FreeBSD base system installed successfully")
 	return nil
 }
@@ -348,6 +393,26 @@ func (b *Builder) installBootInfrastructure(isoRoot string) error {
 		"boot/loader",               // Boot loader (stage 3)
 		"boot/loader.rc",            // Loader configuration
 		"boot/defaults/loader.conf", // Default loader settings
+	}
+
+	// Copy all Forth (.4th) files for loader.rc compatibility
+	// These are referenced by loader.rc and needed for the boot menu
+	b.logger.Debug("Copying Forth boot loader files...")
+	forthPattern := filepath.Join(b.freebsdRoot, "boot", "*.4th")
+	forthFiles, err := filepath.Glob(forthPattern)
+	if err == nil && len(forthFiles) > 0 {
+		for _, forthFile := range forthFiles {
+			relPath := filepath.Base(forthFile)
+			dstPath := filepath.Join(bootDir, relPath)
+			if err := util.CopyFile(forthFile, dstPath, 0644); err != nil {
+				b.logger.Warn("Failed to copy Forth file %s: %v", relPath, err)
+			} else {
+				b.logger.Debug("Copied Forth file: %s", relPath)
+			}
+		}
+		b.logger.Info("Copied %d Forth boot loader files", len(forthFiles))
+	} else {
+		b.logger.Warn("No Forth (.4th) files found - boot menu may not work properly")
 	}
 
 	b.logger.Debug("Copying BIOS boot files from %s...", b.freebsdRoot)
