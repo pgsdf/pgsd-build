@@ -62,6 +62,16 @@ func NewBuilder(cfg *build.Config, logger *util.Logger) *Builder {
 func (b *Builder) Build(cfg config.VariantConfig) error {
 	b.logger.Info("Starting bootenv ISO build for %s", cfg.ID)
 
+	// Warn if not running as root - file ownership may not be preserved correctly
+	if os.Geteuid() != 0 {
+		_, sudoErr := exec.LookPath("sudo")
+		if sudoErr != nil {
+			b.logger.Warn("Not running as root and sudo not available")
+			b.logger.Warn("File ownership in the ISO may be incorrect")
+			b.logger.Warn("For best results, run as root or ensure sudo is available")
+		}
+	}
+
 	// Create working directories
 	workPath := filepath.Join(b.config.GetWorkDir(), "iso", cfg.ID)
 	if err := util.EnsureDir(workPath); err != nil {
@@ -274,13 +284,34 @@ func (b *Builder) extractTxzArchive(archivePath, targetDir string) error {
 	b.logger.Debug("Extracting %s to %s...", archivePath, targetDir)
 
 	// Use tar with xz decompression
-	// tar -xJf <archive> -C <target>
+	// tar -xJpf <archive> -C <target> --numeric-owner
+	// -p: preserve permissions and ownership (only works when running as root)
+	// --numeric-owner: use numeric UIDs/GIDs (e.g., root=0) instead of looking up names
 	tarPath, err := exec.LookPath("tar")
 	if err != nil {
 		return fmt.Errorf("tar command not found: %w", err)
 	}
 
-	cmd := exec.Command(tarPath, "-xJf", archivePath, "-C", targetDir)
+	// If not running as root, try to use sudo for the extraction
+	// This preserves root ownership in the extracted files
+	var cmd *exec.Cmd
+	if os.Geteuid() != 0 {
+		// Try to use sudo for extraction to preserve ownership
+		sudoPath, sudoErr := exec.LookPath("sudo")
+		if sudoErr == nil {
+			b.logger.Info("Using sudo for archive extraction to preserve file ownership")
+			b.logger.Info("You may be prompted for your password")
+			cmd = exec.Command(sudoPath, tarPath, "-xJpf", archivePath, "-C", targetDir, "--numeric-owner")
+		} else {
+			b.logger.Warn("Not running as root and sudo not available")
+			b.logger.Warn("Extracted files will be owned by current user, which may cause boot issues")
+			cmd = exec.Command(tarPath, "-xJpf", archivePath, "-C", targetDir, "--numeric-owner")
+		}
+	} else {
+		// Running as root, extract with ownership preservation
+		cmd = exec.Command(tarPath, "-xJpf", archivePath, "-C", targetDir, "--numeric-owner")
+	}
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("tar extraction failed: %w\nOutput: %s", err, string(output))
