@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -96,9 +97,57 @@ func DirExists(path string) bool {
 	return info.IsDir()
 }
 
-// CleanupDir removes a directory and all its contents, ignoring errors.
-func CleanupDir(path string) {
-	os.RemoveAll(path)
+// CleanupDir removes a directory and all its contents.
+// It tries to handle root-owned files by:
+// 1. Attempting normal removal
+// 2. If that fails, trying to change permissions recursively
+// 3. If that fails, trying to use sudo
+// 4. Returning an error if all methods fail
+func CleanupDir(path string) error {
+	// Try normal removal first
+	err := os.RemoveAll(path)
+	if err == nil {
+		return nil
+	}
+
+	// If removal failed, try changing permissions first
+	_ = filepath.Walk(path, func(file string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Ignore errors during walk
+		}
+		// Try to make everything writable and executable
+		_ = os.Chmod(file, 0777)
+		return nil
+	})
+
+	// Try removal again after chmod
+	err = os.RemoveAll(path)
+	if err == nil {
+		return nil
+	}
+
+	// If still failing, try using sudo (if available)
+	return CleanupDirWithSudo(path)
+}
+
+// CleanupDirWithSudo attempts to remove a directory using sudo.
+// Returns nil if successful, error if sudo is not available or fails.
+func CleanupDirWithSudo(path string) error {
+	// Check if sudo is available
+	sudoPath, err := exec.LookPath("sudo")
+	if err != nil {
+		// Sudo not available, return original error
+		return fmt.Errorf("cannot remove directory %s (permission denied, sudo not available)", path)
+	}
+
+	// Try to remove with sudo
+	cmd := exec.Command(sudoPath, "rm", "-rf", path)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("sudo rm failed: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
 }
 
 // CreateSparseFile creates a sparse file of the specified size.

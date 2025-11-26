@@ -44,7 +44,11 @@ func (b *Builder) Build(cfg config.ImageConfig) error {
 	}
 
 	if !b.config.KeepWork {
-		defer util.CleanupDir(workPath)
+		defer func() {
+			if err := util.CleanupDir(workPath); err != nil {
+				b.logger.Warn("Failed to cleanup work directory %s: %v", workPath, err)
+			}
+		}()
 	}
 
 	// Step 1: Create md-backed disk
@@ -199,7 +203,7 @@ func (b *Builder) createZFSPool(cfg config.ImageConfig, zfsPart string) error {
 func (b *Builder) destroyZFSPool(poolName string) {
 	// On FreeBSD: zpool destroy -f poolName
 	// For prototype, remove the directory
-	util.CleanupDir(fmt.Sprintf("/%s", poolName))
+	_ = util.CleanupDir(fmt.Sprintf("/%s", poolName))
 }
 
 // installPackages installs packages into the root mount.
