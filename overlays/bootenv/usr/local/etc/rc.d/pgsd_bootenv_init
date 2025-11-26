@@ -15,6 +15,9 @@ rcvar="pgsd_bootenv_init_enable"
 start_cmd="${name}_start"
 stop_cmd=":"
 
+# Set defaults
+: ${pgsd_bootenv_init_enable:="NO"}
+
 pgsd_bootenv_init_start()
 {
     echo "PGSD Boot Environment: Initializing..."
