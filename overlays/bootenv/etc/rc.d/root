@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# PGSD Override: Disable root filesystem remounting for live boot
+# Original /etc/rc.d/root tries to remount root as RW, which fails on CD9660
+#
+# PROVIDE: root
+# REQUIRE: fsck
+# KEYWORD: nojail
+
+. /etc/rc.subr
+
+name="root"
+desc="Root file system mount"
+start_cmd="root_start"
+stop_cmd=":"
+
+root_start()
+{
+    # For live ISO/USB boot, root is already mounted read-only by loader
+    # Do not attempt to remount - just verify it's mounted
+
+    if ! mount | grep -q " / "; then
+        err 1 "Root filesystem is not mounted"
+    fi
+
+    echo "Root filesystem is mounted (read-only, live boot)"
+    return 0
+}
+
+load_rc_config $name
+run_rc_command "$1"

@@ -1,0 +1,2 @@
+# This file tells FreeBSD to skip filesystem checks on boot
+# Used for live ISO/USB environments where root is read-only
