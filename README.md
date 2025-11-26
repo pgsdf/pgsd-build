@@ -43,6 +43,7 @@ This system provides a complete solution for building, distributing, and install
 - Go 1.21 or later
 - ZFS support
 - Standard FreeBSD tools (`gpart`, `newfs_msdos`, `zpool`, `zfs`, `xzcat`, `dd`)
+- **Recommended:** `mtools` package for UEFI boot support (`pkg install mtools`)
 
 ### Building
 
