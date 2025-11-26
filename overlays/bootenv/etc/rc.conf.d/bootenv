@@ -4,6 +4,13 @@
 # Enable PGSD boot environment initialization
 pgsd_bootenv_init_enable="YES"
 
+# Live ISO/USB boot configuration
+# Root is already mounted read-only by the loader
+# Disable filesystem checks and remount attempts
+fsck_y_enable="NO"               # Don't run fsck (ISO is read-only)
+root_rw_mount="NO"               # Don't try to remount root as RW
+background_fsck="NO"             # No background fsck
+
 # Memory filesystem for writable areas (live environment)
 # In a real boot environment, these would be tmpfs or mfs
 tmpmfs="YES"
