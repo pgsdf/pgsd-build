@@ -80,7 +80,7 @@ GETTYTAB
 ║  To install PGSD:                                            ║
 ║    1. Wait for Arcan/Durden to start                         ║
 ║    2. Open terminal (Meta+Enter)                             ║
-║    3. Run: pgsd-inst                                         ║
+║    3. Run: Inst                                              ║
 ║                                                              ║
 ║  Or select "PGSD Installer" from the application menu        ║
 ║                                                              ║

@@ -620,7 +620,7 @@ func (b *Builder) registerArcanTarget(isoRoot string) error {
 		"# Registered at: %s\n\n"+
 		"target_name: pgsd-installer\n"+
 		"target_type: BINARY\n"+
-		"target_path: /usr/local/bin/pgsd-inst\n"+
+		"target_path: /usr/local/bin/Inst\n"+
 		"config: default\n",
 		time.Now().Format(time.RFC3339))
 

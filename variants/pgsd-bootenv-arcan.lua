@@ -2,7 +2,7 @@
 --
 -- This variant creates a bootable ISO with:
 -- - Live Arcan/Durden desktop environment
--- - pgsd-inst installer (TUI)
+-- - Inst installer (TUI)
 -- - Embedded system images for installation
 -- - Installer registered as Arcan target
 --
@@ -42,8 +42,8 @@ return {
     "bootenv/utils",
 
     -- Installer binary
-    -- The pgsd-inst TUI installer
-    "installer/pgsd-inst",
+    -- The Inst TUI installer
+    "installer/Inst",
 
     -- Network support for boot environment
     -- Maps to: wpa_supplicant, dhcpcd, curl
@@ -114,7 +114,7 @@ return {
     arcan_target = {
       name = "pgsd-installer",
       type = "BINARY",
-      path = "/usr/local/bin/pgsd-inst",
+      path = "/usr/local/bin/Inst",
       icon = "/usr/local/share/pgsd/icons/installer.png",
       description = "PGSD System Installer",
       categories = { "System", "Installation" },
