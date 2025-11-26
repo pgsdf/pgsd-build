@@ -98,9 +98,9 @@ func DirExists(path string) bool {
 }
 
 // CleanupDir removes a directory and all its contents.
-// It tries to handle root-owned files by:
+// It tries to handle root-owned files and FreeBSD immutable flags by:
 // 1. Attempting normal removal
-// 2. If that fails, trying to change permissions recursively
+// 2. If that fails, trying to change permissions and clear FreeBSD flags recursively
 // 3. If that fails, trying to use sudo
 // 4. Returning an error if all methods fail
 func CleanupDir(path string) error {
@@ -110,17 +110,23 @@ func CleanupDir(path string) error {
 		return nil
 	}
 
-	// If removal failed, try changing permissions first
+	// If removal failed, try changing permissions and clearing FreeBSD flags
 	_ = filepath.Walk(path, func(file string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Ignore errors during walk
 		}
 		// Try to make everything writable and executable
 		_ = os.Chmod(file, 0777)
+
+		// On FreeBSD, try to clear immutable flags that prevent deletion
+		// This handles flags like schg, uchg, sunlnk, uunlnk
+		// These flags prevent deletion even by root until cleared
+		clearFreeBSDFlags(file)
+
 		return nil
 	})
 
-	// Try removal again after chmod
+	// Try removal again after chmod and flag clearing
 	err = os.RemoveAll(path)
 	if err == nil {
 		return nil
@@ -128,6 +134,29 @@ func CleanupDir(path string) error {
 
 	// If still failing, try using sudo (if available)
 	return CleanupDirWithSudo(path)
+}
+
+// clearFreeBSDFlags attempts to clear FreeBSD file flags that prevent deletion.
+// On FreeBSD, files can have immutable (schg/uchg) or undeletable (sunlnk/uunlnk)
+// flags that prevent removal even by root until explicitly cleared.
+func clearFreeBSDFlags(path string) {
+	// Check if chflags command is available (FreeBSD-specific)
+	chflagsPath, err := exec.LookPath("chflags")
+	if err != nil {
+		return // Not on FreeBSD or chflags not available
+	}
+
+	// Try to clear common immutable/undeletable flags
+	// noschg: clear system immutable flag
+	// nouchg: clear user immutable flag
+	// nosunlnk: clear system undeletable flag
+	// nouunlnk: clear user undeletable flag
+	flags := []string{"noschg", "nouchg", "nosunlnk", "nouunlnk"}
+
+	for _, flag := range flags {
+		cmd := exec.Command(chflagsPath, flag, path)
+		_ = cmd.Run() // Ignore errors - flag may not be set
+	}
 }
 
 // CleanupDirWithSudo attempts to remove a directory using sudo.
@@ -138,6 +167,16 @@ func CleanupDirWithSudo(path string) error {
 	if err != nil {
 		// Sudo not available, return original error
 		return fmt.Errorf("cannot remove directory %s (permission denied, sudo not available)", path)
+	}
+
+	// On FreeBSD, try to clear immutable flags recursively with sudo + chflags
+	// This is necessary because even root can't remove files with these flags
+	chflagsPath, chflagsErr := exec.LookPath("chflags")
+	if chflagsErr == nil {
+		// Clear all immutable/undeletable flags recursively
+		// -R: recursive, 0: clear all flags
+		cmd := exec.Command(sudoPath, chflagsPath, "-R", "0", path)
+		_ = cmd.Run() // Ignore errors - flags may not be set
 	}
 
 	// Try to remove with sudo
