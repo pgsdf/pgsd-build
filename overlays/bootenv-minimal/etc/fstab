@@ -1,8 +1,0 @@
-# Device         Mountpoint    FStype  Options  Dump  Pass#
-
-# Root filesystem (CD9660 ISO)
-/dev/iso9660/PGSD  /             cd9660  ro       0     0
-
-# Memory filesystems (configured in rc.conf)
-tmpfs           /tmp          tmpfs   rw,mode=1777  0  0
-tmpfs           /var          tmpfs   rw            0  0

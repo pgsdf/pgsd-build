@@ -245,49 +245,6 @@ ISO contains:
    - Confirm and install
    - Reboot to installed system
 
-## Example: Minimal Boot Environment
-
-```lua
--- variants/pgsd-bootenv-minimal.lua
-return {
-  id = "pgsd-bootenv-minimal",
-  name = "PGSD Minimal Boot Environment",
-  version = "0.1.0",
-
-  -- Minimal packages for console-only installer
-  pkg_lists = {
-    "bootenv/base",
-    "installer/pgsd-inst",
-    "bootenv/network",
-    "system/disk-tools",
-  },
-
-  overlays = {
-    "common",
-    "bootenv",
-  },
-
-  images_dir = "/usr/local/share/pgsd/images",
-
-  bootenv = {
-    live_user = {
-      username = "installer",
-      password = "install",
-      auto_login = true,
-    },
-
-    services = {
-      "sshd",      -- Remote installation support
-      "ntpd",
-    },
-  },
-
-  embedded_images = {
-    "pgsd-server",  -- Server image instead of desktop
-  },
-}
-```
-
 ## Example: Multi-Image ISO
 
 ```lua
@@ -463,8 +420,7 @@ ls /usr/local/share/pgsd/images/
 2. **Test Before Release**: Always test ISOs in VMs before distribution
 3. **Document Requirements**: Clearly state RAM, disk, and network requirements
 4. **Version Everything**: Use semantic versioning for variants
-5. **Provide Multiple Options**: Offer minimal and full variants
-6. **Include Rescue Tools**: Add utilities for system recovery
+5. **Include Rescue Tools**: Add utilities for system recovery
 
 ## See Also
 

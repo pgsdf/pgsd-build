@@ -102,7 +102,7 @@ This creates artifacts in `artifacts/<image-id>/`:
 ./bin/pgsdbuild iso pgsd-bootenv-arcan
 
 # Build with make
-make build-iso VARIANT=pgsd-bootenv-minimal
+make build-iso VARIANT=pgsd-bootenv-arcan
 
 # Build all ISOs (includes all images)
 make build-all-isos
@@ -367,7 +367,7 @@ These errors indicate the base system is incomplete. **Solution: Enable auto-fet
 ```bash
 # Method 1: Auto-fetch (recommended - enabled by default)
 # Just rebuild the ISO - archives will be downloaded automatically
-./bin/pgsdbuild iso pgsd-bootenv-minimal
+./bin/pgsdbuild iso pgsd-bootenv-arcan
 
 # Method 2: Manual download (if auto-fetch is disabled)
 mkdir -p freebsd-dist
@@ -377,7 +377,7 @@ fetch https://download.freebsd.org/releases/amd64/14.2-RELEASE/kernel.txz
 cd ..
 
 # Rebuild the ISO - archives will be auto-detected and extracted
-./bin/pgsdbuild iso pgsd-bootenv-minimal
+./bin/pgsdbuild iso pgsd-bootenv-arcan
 ```
 
 The archive-based approach ensures all boot files are present and eliminates these recurring issues.
