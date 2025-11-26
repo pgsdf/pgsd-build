@@ -53,11 +53,7 @@ test:
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	rm -rf $(BINDIR)
-	rm -rf $(ARTIFACTSDIR)
-	rm -rf $(ISODIR)
-	rm -rf $(WORKDIR)
-	rm -f pgsdbuild pgsd-inst
+	@rm -rf $(BINDIR) $(ARTIFACTSDIR) $(ISODIR) $(WORKDIR) pgsdbuild pgsd-inst
 	@echo "Clean complete!"
 
 # Install binaries to /usr/local/bin (requires root)
