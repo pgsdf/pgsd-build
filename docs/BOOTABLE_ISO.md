@@ -16,8 +16,7 @@ PGSD ISOs support multiple boot modes:
 
 The ISO uses a **CD9660** (ISO 9660) filesystem as the root filesystem. The boot loader is configured during ISO build to explicitly mount using the ISO9660 volume label:
 
-- `overlays/bootenv/boot/loader.conf` - For full boot environment
-- `overlays/bootenv-minimal/boot/loader.conf` - For minimal installer
+- `overlays/bootenv/boot/loader.conf` - Boot environment configuration
 
 During the ISO build process, the `vfs.root.mountfrom` setting is automatically configured with the ISO volume label (e.g., `vfs.root.mountfrom="cd9660:/dev/iso9660/PGSDBOOTENVARCAN"`). This explicit configuration ensures reliable BIOS boot on bare metal, where auto-detection can fail.
 
@@ -119,19 +118,15 @@ Some UEFI implementations are very strict about EFI boot structures. If your sys
 
 1. Try adding `boot_verbose="YES"` to `/boot/loader.conf` before building the ISO
 2. Check system RAM (minimum 2GB recommended, 4GB for full environment)
-3. Try the minimal ISO variant (`pgsd-bootenv-minimal`) which has lower requirements
 
 ## Building ISOs
 
 ISOs are built using the `pgsdbuild` tool. The build system will **automatically download** FreeBSD base system archives if they're not already cached:
 
 ```bash
-# Build full Arcan boot environment ISO
+# Build Arcan boot environment ISO
 # Archives will be auto-downloaded if not present
 pgsdbuild iso pgsd-bootenv-arcan
-
-# Build minimal installer ISO
-pgsdbuild iso pgsd-bootenv-minimal
 ```
 
 **Auto-fetch Configuration:**

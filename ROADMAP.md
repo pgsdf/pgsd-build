@@ -92,7 +92,6 @@ The PGSD Build System is now production-ready with a complete ZFS-based installe
 - [x] Package lists reference (PACKAGE_LISTS.md)
 - [x] Image recipes guide (IMAGE_RECIPES.md)
 - [x] Variants documentation (VARIANTS.md)
-- [x] Minimal variant guide (MINIMAL_VARIANT.md)
 - [x] Build pipeline documentation
 - [x] Troubleshooting guides
 - [x] Code review and security analysis
@@ -122,17 +121,7 @@ The PGSD Build System is now production-ready with a complete ZFS-based installe
 - [x] Network utilities
 - [x] Disk management tools
 
-### Milestone 3.3: Minimal Installer Variant ✅
-- [x] pgsd-bootenv-minimal variant
-- [x] Reduced package sets (~600MB)
-- [x] Minimal service configuration
-- [x] Auto-launch installer
-- [x] Optimized boot time (13s to installer)
-- [x] Reduced memory footprint (1GB minimum)
-- [x] Essential drivers only
-- [x] Minimal Durden configuration
-
-### Milestone 3.4: Additional Variants (PLANNED)
+### Milestone 3.3: Additional Variants (PLANNED)
 - [ ] pgsd-server: Headless server variant
 - [ ] pgsd-developer: Development workstation
 - [ ] pgsd-gaming: Gaming-focused variant
