@@ -244,6 +244,21 @@ func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) e
 		// Extract archives - this is the preferred method
 		b.logger.Info("Found FreeBSD distribution archives, extracting...")
 
+		// Clean target directory once before extracting any archives
+		// This avoids the bug where extracting kernel.txz would delete base.txz files
+		if util.DirExists(isoRoot) {
+			b.logger.Debug("Cleaning ISO root before extraction...")
+			if err := util.CleanupDir(isoRoot); err != nil {
+				b.logger.Warn("Failed to clean ISO root: %v", err)
+			} else {
+				b.logger.Debug("ISO root cleaned successfully")
+			}
+			// Recreate the directory
+			if err := util.EnsureDir(isoRoot); err != nil {
+				return fmt.Errorf("failed to recreate ISO root: %w", err)
+			}
+		}
+
 		if err := b.extractTxzArchive(baseTxz, isoRoot); err != nil {
 			return fmt.Errorf("failed to extract base.txz: %w", err)
 		}
@@ -287,23 +302,9 @@ func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) e
 func (b *Builder) extractTxzArchive(archivePath, targetDir string) error {
 	b.logger.Debug("Extracting %s to %s...", archivePath, targetDir)
 
-	// Clean target directory if it exists from a previous failed build
-	// This is critical to avoid "Can't unlink already-existing object" errors
-	// when extracting over root-owned files from a previous extraction
-	if util.DirExists(targetDir) {
-		b.logger.Debug("Target directory exists, cleaning before extraction...")
-		if err := util.CleanupDir(targetDir); err != nil {
-			b.logger.Warn("Failed to clean target directory: %v", err)
-			b.logger.Warn("Extraction may fail if old root-owned files exist")
-		} else {
-			b.logger.Debug("Target directory cleaned successfully")
-		}
-
-		// Recreate the target directory
-		if err := util.EnsureDir(targetDir); err != nil {
-			return fmt.Errorf("failed to recreate target directory: %w", err)
-		}
-	}
+	// Note: Directory cleanup is handled by the caller to avoid deleting
+	// previously extracted files when extracting multiple archives to the same location.
+	// The caller (installISOPackages) cleans the directory once before all extractions.
 
 	// Use tar with xz decompression
 	// tar -xJpf <archive> -C <target> --numeric-owner
