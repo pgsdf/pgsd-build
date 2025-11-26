@@ -1,0 +1,30 @@
+#!/bin/sh
+#
+# PGSD Live Boot Protection
+# Prevents filesystem checks and root remounting on live ISO/USB
+#
+# PROVIDE: pgsd_liveboot
+# REQUIRE: FILESYSTEMS
+# BEFORE: root fsck
+
+. /etc/rc.subr
+
+name="pgsd_liveboot"
+start_cmd="pgsd_liveboot_start"
+stop_cmd=":"
+
+pgsd_liveboot_start()
+{
+    echo "PGSD Live Boot: Protecting read-only root filesystem"
+
+    # Set sysctl to indicate read-only root (if available)
+    sysctl vfs.root.mountfrom.options="ro" 2>/dev/null || true
+
+    # Create /fastboot to skip fsck (if not already present from overlay)
+    touch /fastboot
+
+    echo "PGSD Live Boot: Filesystem protection enabled"
+}
+
+load_rc_config $name
+run_rc_command "$1"
