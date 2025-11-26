@@ -250,8 +250,31 @@ func (f *Fetcher) downloadAndVerifyChecksums(baseURL, basePath, kernelPath strin
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		// Format: base.txz SHA256 (base.txz) = <hash>
-		// Or: SHA256 (base.txz) = <hash>
+		line = strings.TrimSpace(line)
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Try new format first (FreeBSD 15.x and later)
+		// Format: base.txz	<sha256>	<size>	<component>	<description>	<default>
+		// Tab-separated fields
+		if strings.Contains(line, "\t") {
+			fields := strings.Split(line, "\t")
+			if len(fields) >= 2 {
+				filename := strings.TrimSpace(fields[0])
+				hash := strings.TrimSpace(fields[1])
+				// Only process .txz files
+				if strings.HasSuffix(filename, ".txz") && len(hash) == 64 {
+					checksums[filename] = hash
+					continue
+				}
+			}
+		}
+
+		// Fall back to old format (FreeBSD 14.x and earlier)
+		// Format: SHA256 (base.txz) = <hash>
 		if strings.Contains(line, "SHA256") && strings.Contains(line, " = ") {
 			parts := strings.Split(line, " = ")
 			if len(parts) == 2 {
