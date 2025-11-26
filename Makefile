@@ -53,6 +53,12 @@ test:
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
+	@for dir in $(BINDIR) $(ARTIFACTSDIR) $(ISODIR) $(WORKDIR); do \
+		if [ -d "$$dir" ]; then \
+			echo "Changing permissions for $$dir..."; \
+			chmod -R u+w "$$dir" 2>/dev/null || true; \
+		fi; \
+	done
 	@rm -rf $(BINDIR) $(ARTIFACTSDIR) $(ISODIR) $(WORKDIR) pgsdbuild pgsd-inst
 	@echo "Clean complete!"
 
