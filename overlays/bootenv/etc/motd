@@ -23,7 +23,7 @@ You can use this environment to:
   • Access the network and browse the web
 
 To Install PGSD:
-  Type: sudo pgsd-install
+  Type: sudo Inst
 
 For more information:
   Type: pgsd-welcome

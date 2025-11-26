@@ -18,7 +18,7 @@ LDFLAGS = -X main.Version=$(VERSION) \
 
 # Binary names
 PGSDBUILD = $(BINDIR)/pgsdbuild
-PGSDINST = $(BINDIR)/pgsd-inst
+PGSDINST = $(BINDIR)/Inst
 
 # Phony targets
 .PHONY: all build clean install test help \
@@ -39,11 +39,11 @@ build-pgsdbuild:
 	@mkdir -p $(BINDIR)
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(PGSDBUILD) ./cmd/pgsdbuild
 
-# Build pgsd-inst installer
+# Build Inst installer
 build-installer:
-	@echo "Building pgsd-inst..."
+	@echo "Building Inst..."
 	@mkdir -p $(BINDIR)
-	$(GO) build $(GOFLAGS) -o $(PGSDINST) ./installer/pgsd-inst
+	$(GO) build $(GOFLAGS) -o $(PGSDINST) ./installer/Inst
 
 # Run tests
 test:
@@ -62,7 +62,7 @@ clean:
 			echo "Warning: Failed to remove $$dir (may require manual cleanup)"; \
 		fi; \
 	done
-	@rm -f pgsdbuild pgsd-inst
+	@rm -f pgsdbuild Inst
 	@echo "Clean complete!"
 
 # Install binaries to /usr/local/bin (requires root)
@@ -76,7 +76,7 @@ install: build
 uninstall:
 	@echo "Uninstalling binaries..."
 	rm -f /usr/local/bin/pgsdbuild
-	rm -f /usr/local/bin/pgsd-inst
+	rm -f /usr/local/bin/Inst
 	@echo "Uninstall complete!"
 
 # List available images
@@ -151,9 +151,9 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  all                 - Build all binaries (default)"
-	@echo "  build               - Build pgsdbuild and pgsd-inst"
+	@echo "  build               - Build pgsdbuild and Inst"
 	@echo "  build-pgsdbuild     - Build only pgsdbuild"
-	@echo "  build-installer     - Build only pgsd-inst"
+	@echo "  build-installer     - Build only Inst"
 	@echo "  clean               - Remove all build artifacts"
 	@echo "  install             - Install binaries to /usr/local/bin (requires root)"
 	@echo "  uninstall           - Uninstall binaries from /usr/local/bin (requires root)"
