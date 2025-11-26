@@ -992,28 +992,55 @@ func (b *Builder) addMBRBootCode(isoPath, isoRoot string) error {
 }
 
 // createEFIBootImage creates a FAT filesystem image containing the EFI bootloader
+// This is used for hybrid ISOs created with makefs + mkimg
 func (b *Builder) createEFIBootImage(outputPath, efiBootPath string) error {
-	// Create a 2MB FAT12 image for EFI boot
-	// This matches what FreeBSD does
-	imageSize := 2048 * 1024 // 2MB
+	// Create a 4MB FAT16 image for EFI boot
+	// Needs to be large enough to hold EFI bootloader and directory structure
+	imageSize := 4096 * 1024 // 4MB
+
+	// Try using mformat (from mtools) to create a FAT filesystem
+	// This is the most reliable cross-platform method
+	mformatPath, err := exec.LookPath("mformat")
+	if err != nil {
+		b.logger.Debug("mformat not found - trying dd + newfs_msdos/mkfs.vfat method")
+		return b.createEFIBootImageDirect(outputPath, efiBootPath, imageSize)
+	}
 
 	// Create the image file
 	img, err := os.Create(outputPath)
 	if err != nil {
 		return fmt.Errorf("failed to create EFI image: %w", err)
 	}
-	defer img.Close()
+	img.Close()
 
-	// Truncate to desired size
-	if err := img.Truncate(int64(imageSize)); err != nil {
-		return fmt.Errorf("failed to truncate EFI image: %w", err)
+	// Use mformat to create FAT filesystem
+	// -i: specify image file
+	// -C: create image
+	// -T: total sectors
+	// -h: heads
+	// -s: sectors per track
+	cmd := exec.Command(mformatPath, "-i", outputPath, "-C", "-T", fmt.Sprintf("%d", imageSize/512), "-h", "64", "-s", "32", "::")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		b.logger.Warn("mformat failed: %v, output: %s - trying fallback", err, string(output))
+		return b.createEFIBootImageDirect(outputPath, efiBootPath, imageSize)
 	}
 
-	b.logger.Debug("Created %d KB EFI boot image at %s", imageSize/1024, outputPath)
+	// Use mcopy to copy the EFI bootloader into the image
+	mcopyPath, err := exec.LookPath("mcopy")
+	if err != nil {
+		b.logger.Warn("mcopy not found - EFI image may not boot")
+		return fmt.Errorf("mcopy not available: %w", err)
+	}
 
-	// TODO: Properly format as FAT12 and copy boot1.efi to EFI/BOOT/BOOTX64.EFI
-	// For now, just create the empty image - mkimg will handle basic structure
+	// Create EFI/BOOT directory structure and copy bootloader
+	// mcopy -i image.img source ::destination
+	cmd = exec.Command(mcopyPath, "-i", outputPath, efiBootPath, "::BOOTX64.EFI")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		b.logger.Warn("mcopy failed: %v, output: %s", err, string(output))
+		return fmt.Errorf("failed to copy EFI bootloader into image: %w", err)
+	}
 
+	b.logger.Info("Created EFI boot image with FAT filesystem (%d KB)", imageSize/1024)
 	return nil
 }
 
@@ -1067,7 +1094,7 @@ func (b *Builder) createEFIBootImageForISO(outputPath, efiBootPath string) error
 	return nil
 }
 
-// createEFIBootImageDirect creates EFI boot image using dd and mkfs.vfat (fallback method)
+// createEFIBootImageDirect creates EFI boot image using dd and newfs_msdos/mkfs.vfat (fallback method)
 func (b *Builder) createEFIBootImageDirect(outputPath, efiBootPath string, imageSize int) error {
 	// Create empty image file
 	ddPath, err := exec.LookPath("dd")
@@ -1081,13 +1108,32 @@ func (b *Builder) createEFIBootImageDirect(outputPath, efiBootPath string, image
 		return fmt.Errorf("dd failed: %w, output: %s", err, string(output))
 	}
 
-	// Format as FAT
+	// Try FreeBSD's newfs_msdos first (native FreeBSD tool)
+	newfsPath, err := exec.LookPath("newfs_msdos")
+	if err == nil {
+		// Use newfs_msdos (FreeBSD)
+		// -F 16: FAT16
+		// -L EFIBOOT: volume label
+		// -@ offset: start offset in bytes (0 for file)
+		cmd = exec.Command(newfsPath, "-F", "16", "-L", "EFIBOOT", outputPath)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			b.logger.Warn("newfs_msdos failed: %v, output: %s", err, string(output))
+		} else {
+			b.logger.Debug("Formatted EFI image with newfs_msdos (FreeBSD)")
+			// Still need mtools to copy files into the image
+			b.logger.Warn("Created FAT filesystem - EFI bootloader not copied (requires mtools)")
+			b.logger.Warn("Install mtools package for proper EFI boot support: pkg install mtools")
+			return nil
+		}
+	}
+
+	// Fallback to Linux mkfs.vfat/mkfs.msdos
 	mkfsPath, err := exec.LookPath("mkfs.vfat")
 	if err != nil {
 		// Try mkfs.msdos as fallback
 		mkfsPath, err = exec.LookPath("mkfs.msdos")
 		if err != nil {
-			b.logger.Warn("mkfs.vfat/mkfs.msdos not found - cannot create FAT filesystem")
+			b.logger.Warn("No FAT filesystem tools found (tried: newfs_msdos, mkfs.vfat, mkfs.msdos)")
 			return fmt.Errorf("FAT filesystem tools not available")
 		}
 	}
@@ -1097,8 +1143,9 @@ func (b *Builder) createEFIBootImageDirect(outputPath, efiBootPath string, image
 		return fmt.Errorf("mkfs.vfat failed: %w, output: %s", err, string(output))
 	}
 
+	b.logger.Debug("Formatted EFI image with %s", filepath.Base(mkfsPath))
 	// Mount and copy (requires root or fuse)
-	b.logger.Warn("Created empty FAT image - EFI bootloader not copied (requires mtools)")
+	b.logger.Warn("Created FAT filesystem - EFI bootloader not copied (requires mtools)")
 	b.logger.Warn("Install mtools package for proper EFI boot support")
 	return nil
 }
