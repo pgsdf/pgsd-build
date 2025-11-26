@@ -55,11 +55,14 @@ clean:
 	@echo "Cleaning build artifacts..."
 	@for dir in $(BINDIR) $(ARTIFACTSDIR) $(ISODIR) $(WORKDIR); do \
 		if [ -d "$$dir" ]; then \
-			echo "Changing permissions for $$dir..."; \
-			chmod -R u+w "$$dir" 2>/dev/null || true; \
+			echo "Removing $$dir..."; \
+			chmod -R u+rwX "$$dir" 2>/dev/null || true; \
+			rm -rf "$$dir" 2>/dev/null || \
+			sudo rm -rf "$$dir" 2>/dev/null || \
+			echo "Warning: Failed to remove $$dir (may require manual cleanup)"; \
 		fi; \
 	done
-	@rm -rf $(BINDIR) $(ARTIFACTSDIR) $(ISODIR) $(WORKDIR) pgsdbuild pgsd-inst
+	@rm -f pgsdbuild pgsd-inst
 	@echo "Clean complete!"
 
 # Install binaries to /usr/local/bin (requires root)
