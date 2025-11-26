@@ -79,7 +79,11 @@ func (b *Builder) Build(cfg config.VariantConfig) error {
 	}
 
 	if !b.config.KeepWork {
-		defer util.CleanupDir(workPath)
+		defer func() {
+			if err := util.CleanupDir(workPath); err != nil {
+				b.logger.Warn("Failed to cleanup work directory %s: %v", workPath, err)
+			}
+		}()
 	}
 
 	outputPath := filepath.Join(b.config.GetISODir(), cfg.ID+".iso")
@@ -282,6 +286,24 @@ func (b *Builder) installISOPackages(cfg config.VariantConfig, isoRoot string) e
 // extractTxzArchive extracts a .txz (xz-compressed tar) archive to the target directory
 func (b *Builder) extractTxzArchive(archivePath, targetDir string) error {
 	b.logger.Debug("Extracting %s to %s...", archivePath, targetDir)
+
+	// Clean target directory if it exists from a previous failed build
+	// This is critical to avoid "Can't unlink already-existing object" errors
+	// when extracting over root-owned files from a previous extraction
+	if util.DirExists(targetDir) {
+		b.logger.Debug("Target directory exists, cleaning before extraction...")
+		if err := util.CleanupDir(targetDir); err != nil {
+			b.logger.Warn("Failed to clean target directory: %v", err)
+			b.logger.Warn("Extraction may fail if old root-owned files exist")
+		} else {
+			b.logger.Debug("Target directory cleaned successfully")
+		}
+
+		// Recreate the target directory
+		if err := util.EnsureDir(targetDir); err != nil {
+			return fmt.Errorf("failed to recreate target directory: %w", err)
+		}
+	}
 
 	// Use tar with xz decompression
 	// tar -xJpf <archive> -C <target> --numeric-owner
