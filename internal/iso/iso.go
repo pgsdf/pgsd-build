@@ -454,7 +454,8 @@ func (b *Builder) configureBootLoader(cfg config.VariantConfig, isoRoot string) 
 	label := "PGSD"
 
 	// Update loader.conf to use ISO9660 label for root mount
-	// This fixes BIOS boot on bare metal where auto-detection fails
+	// For USB boot compatibility, we use "cd9660:iso9660/LABEL" format
+	// which lets the loader auto-detect the boot device
 	loaderConfPath := filepath.Join(isoRoot, "boot/loader.conf")
 	if _, err := os.Stat(loaderConfPath); err != nil {
 		if os.IsNotExist(err) {
@@ -472,22 +473,22 @@ func (b *Builder) configureBootLoader(cfg config.VariantConfig, isoRoot string) 
 
 	loaderConf := string(content)
 
-	// Replace vfs.root.mountfrom with explicit ISO9660 label mount
-	// This is critical for BIOS boot on bare metal
-	// Format: cd9660:/dev/iso9660/LABEL (not cd9660:iso9660/LABEL)
-	newLine := fmt.Sprintf(`vfs.root.mountfrom="cd9660:/dev/iso9660/%s"`, label)
+	// Use the format "cd9660:iso9660/LABEL" which works for both CD/DVD and USB
+	// This allows the boot loader to auto-detect the boot device
+	// The "/dev/" prefix is not needed and can cause issues with USB boot
+	newLine := fmt.Sprintf(`vfs.root.mountfrom="cd9660:iso9660/%s"`, label)
 
 	// Replace any existing vfs.root.mountfrom line (empty, ZFS, or other)
 	// Use regex to match vfs.root.mountfrom="..." with any value
 	re := regexp.MustCompile(`vfs\.root\.mountfrom="[^"]*"`)
 	if re.MatchString(loaderConf) {
 		loaderConf = re.ReplaceAllString(loaderConf, newLine)
-		b.logger.Info("Configured root mount: cd9660:/dev/iso9660/%s", label)
+		b.logger.Info("Configured root mount: cd9660:iso9660/%s (USB/CD compatible)", label)
 	} else {
 		// Add the configuration if not present
-		loaderConf += "\n# Root mount configuration for ISO boot\n"
+		loaderConf += "\n# Root mount configuration for ISO boot (USB and CD/DVD compatible)\n"
 		loaderConf += fmt.Sprintf("%s\n", newLine)
-		b.logger.Info("Added root mount configuration: cd9660:/dev/iso9660/%s", label)
+		b.logger.Info("Added root mount configuration: cd9660:iso9660/%s", label)
 	}
 
 	// Write updated loader.conf
