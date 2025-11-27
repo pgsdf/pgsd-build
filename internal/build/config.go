@@ -21,7 +21,7 @@ type Config struct {
 	DiskSizeGB int
 
 	// FreeBSD distribution settings
-	FreeBSDVersion string // FreeBSD version to use (e.g., "14.0-RELEASE")
+	FreeBSDVersion string // FreeBSD version to use (e.g., "15.0-RELEASE")
 	FreeBSDArch    string // Architecture (e.g., "amd64")
 	FreeBSDMirror  string // Mirror URL (optional, uses default if empty)
 	AutoFetch      bool   // Automatically fetch FreeBSD archives if missing
@@ -42,7 +42,7 @@ func NewDefaultConfig() *Config {
 		Verbose:        false,
 		KeepWork:       false,
 		DiskSizeGB:     10,
-		FreeBSDVersion: "15.0-RC3", // Default to FreeBSD 15.0-RC3
+		FreeBSDVersion: "15.0-RC4", // Default to FreeBSD 15.0-RC4
 		FreeBSDArch:    "amd64",         // Default to amd64
 		FreeBSDMirror:  "",              // Use default mirror
 		AutoFetch:      true,            // Enable automatic fetching by default
