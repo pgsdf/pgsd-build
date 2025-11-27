@@ -131,8 +131,8 @@ The build system can **automatically download** FreeBSD's official **base.txz** 
 The auto-fetch feature is controlled by environment variables:
 
 ```bash
-# Specify FreeBSD version (default: 15.0-RC3)
-export FREEBSD_VERSION=15.0-RC3
+# Specify FreeBSD version (default: 15.0-RC4)
+export FREEBSD_VERSION=15.0-RC4
 
 # Specify architecture (default: amd64)
 export FREEBSD_ARCH=amd64
